@@ -13,7 +13,7 @@
 ; The "bit ULA_STAT" reads are markers: harmless status reads whose raster positions
 ; the emulator's I/O log records (the soak finds the variable work's end by them).
 	.segment "CODE"
-work:
+work:					; ---- variable length: must end before line 249 ----
 	bit	ULA_STAT		; marker: the bottom of the frame begins
 	lda	fpar			; the field parity alternates
 	eor	#1
@@ -33,7 +33,6 @@ work:
 	and	SCHKEEP,x
 	ora	SCHSET,x
 	sta	sched
-	; ---- variable length: must end before line 249 ----
 	jsr	KBD			; the keys, for the next field's logic and schedule
 	jsr	logic			; this field's dy, and hnew: the commit two fields on
 	jsr	vstep
@@ -41,7 +40,7 @@ work:
 wk_de:	lda	ULA_STAT
 	and	#DE_BIT
 	beq	wk_de
-	; ---- fixed length from here to the lock ----
+	; ---- fixed length from here to the lock: every path padded to the same time ----
 	bit	ULA_STAT
 	lda	cnext
 	beq	wk_noc
@@ -118,7 +117,7 @@ wk_pl:	bit	ULA_STAT		; marker
 	jsr	ula_apply
 	jmp	frame_tail
 
-; mx += cdir (mod 2560)
+; ---- mx_step: mx += cdir (mod 2560) --------------------------------------------------
 mx_step:
 	lda	cdir
 	clc

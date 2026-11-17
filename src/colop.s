@@ -1,13 +1,23 @@
-	.segment "CODE"
-; ---- a column step's edge rows (fixed length) ------------------------------------------
-; In: cdir (1: right, $FF: left), cen (0: no stores), mx, wy.  Out: sxin, sxout (the
-; entering and leaving columns).  Five rows: right, the rows of scanlines wy-8, wy,
+; colop.s -- a column step's edge rows (docs/DESIGN.md section 5.2).  Fixed length.
+;
+; The strip (strip.s) writes the entering and leaving columns on the window's lines;
+; colop writes the cells the strip cannot reach, as whole characters: the window's
+; first and last rows (top: line Y0 has no iteration before it; bot: its lines below
+; the window), and the look-ahead rows and gap cells beyond them, which are entered
+; or zeroed only if their notch class is due (notch.s).  Every cell takes the same
+; time whether it is wanted or not: an unwanted cell's stores go to the dummy page
+; (SELP), and in rows top and bot unwanted lines likewise (PUTCM, by MLINE).
+;
+; In: cdir (1: right, $FF: left), cen (0: no stores), ctb (1: rows top and bot whole,
+; for a commit; 0: only their hidden lines, for the behind field), mx, wy.  Out: sxin,
+; sxout (the entering and leaving columns), for the strip.  Five rows: right, the rows of scanlines wy-8, wy,
 ; wy+169, wy+177, wy+185 (top-1, top, bot, bot+1, bot+2); left, wy-16 .. wy+177.  The
 ; window lines of rows top+1..bot-1 are the strip's; top and bot are done whole here.
 ;   enter (pattern at sxin): top, bot; top-1 and bot+1 if sxin's class is due there
 ;   leave (zero at sxout):   top, bot; right: bot+1, top-1 if due, bot+2 if the cell's
 ;                            class (as the row below's gap: sxout + 72) is due; left:
 ;                            top-1, bot+1 if due, top-2 if (sxout - 72)'s is due above
+	.segment "CODE"
 colop:	lda	cen
 	sta	ctbe
 	; rows top and bot: every line (ctb), or only the hidden ones -- top's above the

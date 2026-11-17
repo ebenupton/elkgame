@@ -1,6 +1,17 @@
+; notch.s -- the vertical step: a look-ahead row drawn a quarter at a time
+; (docs/DESIGN.md section 5.3).
+;
+; The rows just above and just below the window (the look-ahead rows) are drawn in
+; four classes of map columns: class = (column >> 2) & 3, a 4-character block of the
+; map.  With phase k = (wy & 7) / 2, a cell of the row below is required to be right
+; iff its class <= k, and a cell of the row above iff its class <= 3 - k.  So the row
+; below is complete just as it comes into view (k = 3), and so is the row above (k = 0).
+; A 2-line step makes exactly one (row, class) newly due, and vstep draws just that:
+; about 18 cells (the class's cells of the row's 72-cell span, the window's and the
+; gap's), the same work every step.  Variable length: this runs before display end.
+
+; ---- vstep: |dy| / 2 steps of 2 lines, each drawing the class it makes due ----------
 	.segment "CODE"
-; ---- the vertical step: |dy|/2 fine steps, each the class of the look-ahead row that
-; the new position makes due -------------------------------------------------------
 vstep:	lda	#0
 	sta	gch
 	lda	dy
@@ -87,9 +98,13 @@ row_of_tmp:
 	sta	grow
 	rts
 
-; ---- a class of a look-ahead row: row grow, class gcls; gkind 0: the row above (span
-; mx-14: 14 gap cells, then the window), 1: the row below (span mx: the window, then
-; 14 gap cells).  Variable length: only the cells in the span are written. ------------
+; ---- group: one class of a look-ahead row ---------------------------------------------
+; Row grow, class gcls.  gkind 0: drawn as the row above the window, whose span is
+; GAP gap cells (zeros) then the window's WIN_W (pattern), from column mx - GAP;
+; gkind 1: as the row below, the window's WIN_W then GAP gap cells, from mx.  Writes
+; only the class's cells in the span: five blocks, 12 columns apart.  A block wholly
+; pattern or wholly zero whose 32 bytes are in one page takes the fast path (pcl);
+; the others go a cell at a time (putc).
 group:	lda	gkind
 	bne	g_k1
 	lda	mx
@@ -101,12 +116,12 @@ group:	lda	gkind
 	tax
 	lda	MAPHI,x
 	sta	tmp+1
-	lda	#3+GAP			; zero: relb < 3 + GAP
+	lda	#3+GAP			; zero: grel < 3 + GAP
 	sta	gzlo
-	sta	gplo			; a whole block of pattern: 3 + GAP <= relb <= 71
+	sta	gplo			; a whole block of pattern: 3 + GAP <= grel <= 71
 	lda	#72
 	sta	gphi
-	lda	#3			; of zeros: 3 <= relb <= GAP - 1
+	lda	#3			; of zeros: 3 <= grel <= GAP - 1
 	sta	gz0
 	lda	#GAP
 	sta	gz1
@@ -119,16 +134,17 @@ g_k1:	lda	mx
 	sta	tmp+1
 	lda	#0
 	sta	gzlo
-	lda	#3+WIN_W		; zero: relb >= 3 + WIN_W
+	lda	#3+WIN_W		; zero: grel >= 3 + WIN_W
 	sta	gzhi
-	sta	gz0			; a whole block of zeros: 3 + WIN_W <= relb <= 71
+	sta	gz0			; a whole block of zeros: 3 + WIN_W <= grel <= 71
 	lda	#72
 	sta	gz1
-	lda	#3			; of pattern: 3 <= relb <= WIN_W - 1
+	lda	#3			; of pattern: 3 <= grel <= WIN_W - 1
 	sta	gplo
 	lda	#WIN_W
 	sta	gphi
-g_s:	; bs = S0 >> 2 (low byte: the hash's index; the map's 640 blocks are 5 periods)
+g_s:	; S0 (tmp) = the span's first column; bs = S0 >> 2, its block (the low byte is the
+	; hash's index: the map's 640 blocks are 5 of the hash's periods)
 	lda	tmp
 	and	#3
 	sta	tmp2			; S0 & 3
@@ -140,7 +156,8 @@ g_s:	; bs = S0 >> 2 (low byte: the hash's index; the map's 640 blocks are 5 peri
 	lsr	gb+1
 	ror	a
 	sta	gb			; bs
-	; b = bs + ((gcls - bs) & 3); relb = 4 (b - bs) - (S0 & 3) + 3
+	; the class's first block b = bs + ((gcls - bs) & 3); its first cell's grel =
+	; 4 (b - bs) - (S0 & 3) + 3 (grel - 3 is the column relative to the span)
 	lda	gcls
 	sec
 	sbc	gb

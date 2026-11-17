@@ -1,4 +1,11 @@
-; The keyboard, from main RAM ($0900): ROM 8 paged over &8000-&BFFF unmaps this bank.
+; kbd.s -- the keyboard scan, in main RAM at &0900 (KBD).
+;
+; The Electron's keyboard is read through ROM slot 8: paging it in maps the keyboard
+; matrix over &8000-&BFFF (each address line selects a column; the low four data bits
+; are the rows), which unmaps this program's bank -- so the routine runs from main RAM.
+; Leaving slots 8-11 must go by way of slot 12 (AUG 15.4).  Result in KEYS (bits 0..5:
+; left or Z, right or X, up or :, down or /, comma, full stop) and KSPC (SPACE).
+; Called once a field, in the variable-length work.
 	.segment "KBDCODE"
 kbd:	lda	#8
 	sta	ULA_PAGE
@@ -53,6 +60,6 @@ kbd:	lda	#8
 	lda	#$0C			; out of 8-11 by way of 12 (AUG 15.4)
 	sta	ULA_PAGE
 	lda	#0
-kbd_bank = * - 1
+kbd_bank = * - 1			; (init patches in this bank's number)
 	sta	ULA_PAGE
 	rts

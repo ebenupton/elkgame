@@ -1,5 +1,10 @@
-; The loader, *RUN at &2000: finds a writable sideways RAM bank that holds no ROM,
-; copies the program into it and the keyboard routine to &0900, and enters it.
+; loader.s -- the program file, loaded and run at &2000 (*RUN from disc or tape).
+;
+; Finds a sideways RAM bank: slots 0-7 and 12-15 in turn, skipping any that holds a ROM
+; image (a copyright string at (&8007)) and any that does not hold a written byte.
+; Copies the 16K image to &8000 in that bank and the keyboard routine to &0900, and
+; enters the image at &8000 with the bank's number in A.  If none is found, it says
+; so and returns to the OS.  The image never returns: BREAK to leave.
 	.setcpu "6502"
 OSWRCH	= $FFEE
 ROMSEL	= $FE05
@@ -75,7 +80,8 @@ start:	sei
 	lda	cand
 	jmp	$8000
 
-; page bank A in (by way of 12 when leaving 8-11), keeping the OS's copy
+; page bank A in (by way of 12, in case the current slot is one of 8-11), keeping the
+; OS's copy of the paged slot (&F4) up to date
 page:	pha
 	lda	#$0C
 	sta	ROMSEL

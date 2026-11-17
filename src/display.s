@@ -1,7 +1,14 @@
+; display.s -- the next field's display parameters, from wx and wy (docs/DESIGN.md
+; sections 2 and 4), and the ring-address helpers.  Fixed length.
+;
+; Horizontally: t = (WIN_C - wx) & 7 characters of lead-in, and a screen start at the
+; 64-byte-aligned column cb = wx - WIN_C + t, so that the window's first pixel is map
+; column wx.  Vertically: f = ((Y0 - wy) & 7) / 2 rows of 10-line text mode (MODE 3)
+; above the window push the first MODE 1 row down by 2f lines; the screen start is
+; then the row of map scanline wy + 10f - Y0, less the 640 f bytes the text rows fetch.
 	.segment "CODE"
-; ---- display parameters for the next frame from wx, wy ----------------------------
 setup_frame:
-	; t = (WIN_C - wx) & 7: the lead-in, and the two mode values that differ at t = 0
+	; t = (WIN_C - wx) & 7: the lead-in
 	lda	wx
 	and	#7
 	tax
@@ -62,7 +69,7 @@ setup_frame:
 	ror	a
 	sta	tmp			; y0 low; tmp+1 = y0 high (0 or 1)
 	jsr	rowaddr			; A:Y = &3000 + (576 y0 + cb8) mod &5000 (Y high)
-	; S = that - 640 f
+	; the screen start = that - 640 f (the text rows fetch 640 bytes each)
 	sec
 	sbc	F640L,x
 	sta	tmp
@@ -103,8 +110,8 @@ setup_frame:
 	sta	vcv
 	rts
 
-; A:Y <- &3000 + (576 * row + cb8) mod &5000, row in tmp (low), tmp+1 (0/1).
-; Keeps X.
+; ---- rowaddr: A:Y <- &3000 + (576 * row + cb8) mod &5000 (Y high, ra low), row in
+; tmp (low), tmp+1 (0 or 1).  Keeps X.  Both paths take the same time.
 rowaddr:
 	ldy	tmp
 	lda	tmp+1
@@ -115,7 +122,8 @@ rowaddr:
 	sta	ra
 	lda	R576H,y
 	jmp	@sum
-@hi:	lda	R576L+256,y
+@hi:	nop				; (balances the jmp)
+	lda	R576L+256,y
 	clc
 	adc	cb8
 	sta	ra
@@ -127,6 +135,7 @@ rowaddr:
 	lda	ra
 	rts
 
+; ---- ula_apply: the screen start and line 0's mode, for the next field ---------------
 ula_apply:
 	lda	fe02v
 	sta	ULA_SA_L
@@ -136,7 +145,8 @@ ula_apply:
 	sta	ULA_MODE
 	rts
 
-; A:Y <- &3000 + (576 yt + ra) mod &5000 (ra 16-bit, < &5000)
+; ---- addrow: A:Y <- &3000 + (576 yt + ra) mod &5000 (Y high), yt 0..319 (yt, yt_hi),
+; ra < &5000.  Both paths take the same time.
 addrow:
 	ldy	yt
 	lda	yt_hi
@@ -147,7 +157,8 @@ addrow:
 	pha
 	lda	R576H,y
 	jmp	@s
-@hi:	lda	R576L+256,y
+@hi:	nop				; (balances the jmp)
+	lda	R576L+256,y
 	clc
 	adc	ra
 	pha

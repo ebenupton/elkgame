@@ -1,31 +1,35 @@
-; calibration (cycles), tuned against clkh's I/O log (measure.py, frames.py)
-CAL_PRE   = 98      ; lock -> first iteration (entered at wl2, S-3 us)
-CAL_MID   = 0       ; MODE 5 write -> variant entry
-CAL_WPAD  = 12      ; makes an iteration 128
-CAL_EXIT  = 17      ; exit block in line Y1-1's blanking
-CAL_REM   = 138
-CAL_N64   = 5       ; exit -> lock read: 14400 (+128 in a 313-line field)
-CAL_BPAD1 = 1191    ; frame B is 5954 shorter than frame A
-CAL_BPAD2 = 1191
-CAL_BPAD3 = 1191
-CAL_BPAD4 = 1191
-CAL_BPAD5 = 826
-CAL_BTHR  = $594
-CAL_BN64  = 109
-CAL_BREM  = 0
-CAL_M3    = 6       ; palette -> MODE 3 write (S+9 us)
-CAL_RTC   = 22      ; variant -> the RTC sample
+; cal.inc -- the frame's cycle calibration (2 MHz CPU cycles).
+;
+; These place the raster lock and balance the fixed-length work's paths against each
+; other.  They were tuned against the emulator's I/O log: the soak (test/soak.sh)
+; reports where the lock read lands ("lock read h", in 1/16 us of line 0), and
+; test/fingerprint.sh with test/fpcompare.py measures the fixed work's length per
+; field.  docs/DESIGN.md section 7 describes the procedure.
+
+; ---- the top of the frame (raster.s) ----
+CAL_L2    = 66      ; between the two lock reads: the second lands mid line 1
+CAL_PRE   = 98      ; lock -> the first iteration (entered at S - 3 us)
 CAL_PREP  = 2       ; extra, when the first iteration is the palette line's
-CAL_NOC   = 248     ; pads the no-commit path to the commit path's length
-CAL_BI1   = 1000    ; pad the idle strip build to the real one's length
-CAL_BI2   = 1000
-CAL_BI3   = 706
-CAL_COINC = 60      ; colop: pads a run's later rows to its first row's length
-CAL_BEH   = 62      ; pads the behind path of the fixed work
-CAL_NOC1  = 1200    ; the idle field's pad for the edge rows
+
+; ---- the fixed-length work below the window (frame.s): every path the same length ----
+CAL_CP    = 32      ; a commit going right: pad (the directions' edge rows differ)
+CAL_CM    = 20      ; a commit going left
+CAL_BP    = 11      ; the behind field going right: pad (left is the longer)
+CAL_BEH   = 62      ; the behind path, after its edge rows (LDELAY)
+CAL_NOC1  = 1200    ; an idle field, in place of the edge rows (four LDELAYs)
 CAL_NOC2  = 1200
 CAL_NOC3  = 1200
-CAL_CP    = 32      ; commit going right: pad (lock centring)
-CAL_CM    = 20      ; commit going left
-CAL_BP    = 11      ; behind field going right
-CAL_L2    = 66      ; between the two lock reads: the second lands mid-line 1
+CAL_NOC   = 248
+CAL_BI1   = 1000    ; an idle strip build, padded to the real one's length (strip.s)
+CAL_BI2   = 1000
+CAL_BI3   = 706
+
+; ---- the delay to the next lock (frame_tail): CAL_N64 (+2 in the 313-line field)
+; passes of 64 cycles and CAL_REM, after the fixed work ----
+CAL_N64   = 5
+CAL_REM   = 138
+
+; ---- the bootstrap (init.s, boot_sync) ----
+CAL_BTHR  = $594    ; poll count from the RTC flag to display end: fewer = the 313-line field
+CAL_BN64  = 109     ; display end -> the first lock read: passes of 64 cycles ...
+CAL_BREM  = 0       ; ... and the rest

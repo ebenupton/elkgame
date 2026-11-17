@@ -1,8 +1,20 @@
+; strip.s -- building the beam-raced strip for the next field (docs/DESIGN.md 5.1).
+; Fixed length.
+;
+; A coarse step's entering column is written into the ring during the field that first
+; shows it (or, for a 2-column step's first column, the field before), one byte and
+; one zero per window line, in the line's horizontal blanking, by the snippets the
+; scanline loop jumps through (gen_snips.s).  One snippet serves a character row: its
+; two stores are indexed by X, the line within the row, so the builder patches four
+; operand bytes and fills eight data bytes a row, not five bytes a line.
+;
+; smode 0 (idle): every snippet stores to the dummy page, in the same time.  Otherwise
+; snippet p is row (top & ~1) + p: its first store's address is that row's cell in
+; column sxin and its bytes (VBUF) the pattern's there; its second store's address is
+; the cell in column sxout (it stores zero).  Ahead of the beam (smode 1) iteration y
+; stores line y+1's bytes; behind it (smode 2), line y's.  The last snippet is never
+; built (only the exit iteration reaches it, ahead of the beam, where it is not needed).
 	.segment "CODE"
-; ---- the strip for the next field (fixed length) -----------------------------------
-; smode 0: every snippet stores to the dummy.  Else snippet p is row (top & ~1) + p: its first
-; store's address is that row's cell in column sxin and its bytes (VBUF) the pattern's
-; there; its second store's address the cell in column sxout.
 build:	lda	smode
 	beq	:+
 	jmp	b_real
