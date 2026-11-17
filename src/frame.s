@@ -15,27 +15,9 @@
 	.segment "CODE"
 work:
 	bit	ULA_STAT		; marker: the bottom of the frame begins
-	; A lock check from the status samples of lines 97..102 (RTCLOG 103..98: the index
-	; counts down): the number with the RTC flag set, with the field parity, indexes
-	; LOCKADJ, a correction to the frame length.  LOCKADJ is all zeros (CAL_NOADJ): the
-	; two-read lock made the correction unnecessary.
-	ldx	#0
-	.repeat	6, i
-	lda	RTCLOG+98+i
-	and	#RTC_BIT
-	beq	:+
-	inx
-:
-	.endrep
-	lda	fpar
+	lda	fpar			; the field parity alternates
 	eor	#1
 	sta	fpar
-	txa
-	clc
-	adc	fpar			; 4 when the lock is right
-	tax
-	lda	LOCKADJ,x
-	sta	ladj
 	lda	bank
 	ora	#$30			; clear RTC and display end; keep the bank
 	sta	ULA_PAGE
@@ -153,28 +135,15 @@ mx_step:
 	rts
 
 ; ---- the delay to the lock -----------------------------------------------------------
-; Count to the next field's line 0: (312 + F) lines from frame_top, less what the
-; fixed-length work has spent; ladj (always 0) would lengthen or shorten it.
+; Count to the next field's line 0: (312 + F) lines from frame_top, F = 1 in the
+; 313-line field, less what the fixed-length work has spent.
 	.segment "TAILS"
 frame_tail:
-	bit	ULA_STAT
-	lda	ladj			; keep the correction bounded
-	cmp	#$80
-	bcc	@pos
-	cmp	#<(-CAL_N64+1)		; >= -(CAL_N64-1): the count stays >= 1
-	bcs	@ok
-	lda	#<(-CAL_N64+1)
-	bne	@set
-@pos:	cmp	#101
-	bcc	@ok
-	lda	#100
-@set:	sta	ladj
-@ok:	lda	fpar
+	bit	ULA_STAT		; marker
+	lda	fpar
 	asl	a
 	clc
 	adc	#CAL_N64
-	clc
-	adc	ladj
 	tax
 taild:	DELAY	59
 	dex

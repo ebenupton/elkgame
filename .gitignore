@@ -1,7 +1,7 @@
 build/
 build-emu/
 build-emu.log
-roms/
+/roms
 out/
 __pycache__/
 *.pyc

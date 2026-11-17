@@ -19,8 +19,8 @@
 //                          address fetched in each 0.5 us slot, 0xffff none), PREFIX.mode
 //                          (313 x 128 bytes), PREFIX.io (every &FExx access: line, h in
 //                          1/16 us, R/W, register, value)
-//   iolog N FILE           N fields; append each field's &FExx writes to FILE, one line
-//                          each ("field line h reg value"): a timing fingerprint
+//   iolog N FILE           N fields; append each field's &FExx accesses to FILE, one line
+//                          each ("field line h R|W reg value"): a timing fingerprint
 //   realula 0|1            the Ferranti ULA's 40-column address phase and mode 7 wrap
 //                          (1), or the FPGA/JamSoft model's (0, the default)
 //   rowreg old|new         the start-of-row register: CLK's original (every bit) or the
@@ -274,7 +274,7 @@ void iolog(elk::Machine &m, int nf, const std::string &path) {
 		elk::run_fields(m, 1);
 		if(!f) continue;
 		for(const auto &a : m.video_.completed->io)
-			if(a.write) std::fprintf(f, "%d %d %d FE%02X %02X\n", k, a.v, a.h, a.reg, a.value);
+			std::fprintf(f, "%d %d %d %c FE%02X %02X\n", k, a.v, a.h, a.write ? 'W' : 'R', a.reg, a.value);
 	}
 	if(f) std::fclose(f);
 }

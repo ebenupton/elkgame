@@ -131,3 +131,15 @@ sdone:
 .ident(.sprintf("%s7", .string(p))):	sta	a:$FF07,x
 	.endmacro
 
+
+; NOCROSS label, n: assert that the n bytes from label lie in one page (an indexed
+; access to them never costs the extra cycle of a page crossing).
+	.macro	NOCROSS	label, n
+	.assert	>(label) = >(label + n - 1), error, .sprintf("%s crosses a page", .string(label))
+	.endmacro
+
+; NOWRAP vector: assert that a jmp (vector) does not meet the 6502's indirect-jump bug
+; (a vector at &xxFF takes its high byte from &xx00).
+	.macro	NOWRAP	vector
+	.assert	<(vector) <> $FF, error, .sprintf("%s is at &xxFF", .string(vector))
+	.endmacro

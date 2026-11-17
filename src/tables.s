@@ -1,68 +1,23 @@
-; ---------------------------------------------------------------------------------
+; tables.s -- the tables: tools/gen.py's (segment TABLES), then the hand-written ones.
+;
+; A table indexed in the fixed-length work must not straddle a page over the range of
+; its index, or the access costs a cycle more for some indexes and the "fixed" work is
+; not fixed: NOCROSS asserts it for each (and gen.py for its own).  The page-aligned
+; tables come first.
+
 	.segment "TABLES"
 	.include "gen_tables.s"
 
 	.segment "TABLES2"
 	.align	256
-; f -> lines from the lock to the first iteration, the first line's phase, top mode
-BAND_N:	.byte	1, 8, 18, 28	; lines counted before the first iteration's line
-N1TAB:	.byte	27, 20, 10, 0	; iterations above the palette line's: lines 2.., 9.., 19.. to 28
-TOPMODE: .byte	M1, M3, M3, M3
-F10M:	.byte	<(0-Y0+2560), <(10-Y0+2560), <(20-Y0+2560), <(30-Y0+2560)
-F10MH:	.byte	>(0-Y0+2560), >(10-Y0+2560), >(20-Y0+2560), >(30-Y0+2560)
-F10:	.byte	0, 10, 20, 30
-F640L:	.byte	<0, <640, <1280, <1920
-F640H:	.byte	>0, >640, >1280, >1920
-; RTC samples set among lines 97..102 -> the field (FF: lost), the lock correction in
-; half lines (fewer than expected: early; more: late)
-; (RTC samples set + F) -> correction in half lines: 4 is a good lock; fewer means
-; the loop ran early (count later), more late
-	.ifdef	CAL_NOADJ
-LOCKADJ: .byte	0, 0, 0, 0, 0, 0, 0, 0
-	.else
-LOCKADJ: .byte	1, 1, 1, 1, 0, $FE, $FC, $FA
-	.endif
-; keys: bit 0 left, 1 right, 2 up, 3 down
-KDX:	.repeat	16, k
-	.byte	<(((k >> 1) & 1) - (k & 1))	; keys: 2 columns a commit
+; cnext2 (a signed column count) -> the direction of a 2-column step's behind field
+; (1 right, $FF left), or 0: a whole page, so that a negative index cannot cross one
+BEH:	.repeat	256, k
+	.byte	<((k = $FE) * $FF + (k = 2))
 	.endrep
-KDY:	.repeat	16, k
-	.byte	<(((k >> 3) & 1) - ((k >> 2) & 1))
-	.endrep
-; newly pressed keys (bits 4, 5) -> sched step
-SCHKEEP:	.repeat	64, k
-	.byte	<(((k >> 4) & 3) = 0) * $FF
-	.endrep
-SCHSET:	.repeat	64, k
-	.if	(k >> 5) & 1
-	.byte	8
-	.elseif	(k >> 4) & 1
-	.byte	0
-	.else
-	.byte	0
-	.endif
-	.endrep
-KANY:	.byte	0
-	.repeat	15
-	.byte	$FF
-	.endrep
-; by direction (0 right, 1 left): the entering and leaving columns from mx
-XINL:	.byte	<WIN_W, <(2560-1)
-XINH:	.byte	>WIN_W, >(2560-1)
-XOUTL:	.byte	0, <(WIN_W-1)
-XOUTH:	.byte	0, >(WIN_W-1)
-; the edge rows' scanlines from wy (+2560 where negative), five a direction
-COFFI:	.byte	0, 5
-COFFL:	.byte	<(2560-8), 0, <(H-1), <(H+7), <(H+15)
-	.byte	<(2560-16), <(2560-8), 0, <(H-1), <(H+7)
-COFFH:	.byte	>(2560-8), 0, >(H-1), >(H+7), >(H+15)
-	.byte	>(2560-16), >(2560-8), 0, >(H-1), >(H+7)
-; by direction: the lower run's first offset, and its first row's number
-COFFD:	.byte	2, 8
-CRUN2:	.byte	2, 3
-CSKIP:	.byte	4, 0
-CTOP:	.byte	1, 2
-; line masks, 8 bytes each: lines < 0, 2, 4, 6; lines > 1, 3, 5, 7; every line
+
+; Line masks for the edge rows' partial cells (PUTCM), 8 bytes each: lines < 0, 2, 4,
+; 6; lines > 1, 3, 5, 7; every line.  Indexed by mrow + line (0..71).
 MLINE:	.repeat	4, m
 	.repeat	8, i
 	.byte	i < 2*m
@@ -74,17 +29,56 @@ MLINE:	.repeat	4, m
 	.endrep
 	.endrep
 	.byte	1, 1, 1, 1, 1, 1, 1, 1
-; cnext2 + 2 -> the behind column's direction (a 2-column step), or 0
-BEH:	.byte	0, 0, 1		; (indexed from cnext2 = $FE: -2, -1, 0, 1, 2)
-	.res	251
-	.byte	$FF, 0
-; column & 3 -> the block's left pixel column black
-PMASK:	.byte	$77, $FF, $FF, $FF
-; the random trajectory's choices
-RDX:	.byte	0, 1, $FF, 2, $FE, 2, $FE, 1
-RDY:	.byte	0, 2, $FE, 2, $FE, 0, 2, $FE
-RGAP:	.byte	2, 2, 2, 3, 3, 4, 5, 7
-RVD:	.byte	1, 1, 2, 3
-DGX:	.byte	2, 2, $FE, $FE
-DGY:	.byte	2, $FE, $FE, 2
+	NOCROSS	MLINE, 72
 
+; ---- the next field's band (setup_frame), by f = ((Y0 - wy) & 7) / 2: the number of
+; text rows above the window ----
+BAND_N:	.byte	1, 8, 18, 28		; lines from line 0 to the first iteration's
+N1TAB:	.byte	27, 20, 10, 0		; iterations of loop 1 (lines above the palette line's)
+TOPMODE: .byte	M1, M3, M3, M3		; the mode of line 0 (a 20K mode: the lock reads stall)
+F10M:	.byte	<(0-Y0+2560), <(10-Y0+2560), <(20-Y0+2560), <(30-Y0+2560)	; 10 f - Y0 (mod 2560)
+F10MH:	.byte	>(0-Y0+2560), >(10-Y0+2560), >(20-Y0+2560), >(30-Y0+2560)
+F640L:	.byte	<0, <640, <1280, <1920	; 640 f: the text rows' bytes
+F640H:	.byte	>0, >640, >1280, >1920
+	NOCROSS	BAND_N, 4*7
+
+; ---- a column step's edge rows (colop), by direction (0 right, 1 left) ----
+XINL:	.byte	<WIN_W, <(2560-1)	; the entering column, from mx
+XINH:	.byte	>WIN_W, >(2560-1)
+XOUTL:	.byte	0, <(WIN_W-1)		; the leaving column, from mx
+XOUTH:	.byte	0, >(WIN_W-1)
+COFFI:	.byte	0, 5			; the first of the direction's five row offsets
+COFFL:	.byte	<(2560-8), 0, <(H-1), <(H+7), <(H+15)	; the rows' scanlines from wy
+	.byte	<(2560-16), <(2560-8), 0, <(H-1), <(H+7)	; (+2560 where negative)
+COFFH:	.byte	>(2560-8), 0, >(H-1), >(H+7), >(H+15)
+	.byte	>(2560-16), >(2560-8), 0, >(H-1), >(H+7)
+COFFD:	.byte	2, 8			; the lower run's first offset ...
+CRUN2:	.byte	2, 3			; ... and its first row's number
+CSKIP:	.byte	4, 0			; the row with no entering cell
+CTOP:	.byte	1, 2			; the window's top row
+PMASK:	.byte	$77, $FF, $FF, $FF	; column & 3 -> the block's left pixel column black
+	NOCROSS	XINL, PMASK+4-XINL
+
+; ---- the variable-length work (no alignment needed) ----
+; keys (bits 0..3: left, right, up, down) -> one column, one 2-line step a press
+KDX:	.repeat	16, k
+	.byte	<(((k >> 1) & 1) - (k & 1))
+	.endrep
+KDY:	.repeat	16, k
+	.byte	<(((k >> 3) & 1) - ((k >> 2) & 1))
+	.endrep
+; newly pressed keys (bit 4 comma, bit 5 full stop) -> the lead-in schedule: kept
+; (neither pressed), or set to 0 (comma: the FPGA ULA's) or 8 (full stop: the real ULA's)
+SCHKEEP: .repeat 64, k
+	.byte	<(((k >> 4) & 3) = 0) * $FF
+	.endrep
+SCHSET:	.repeat	64, k
+	.byte	((k >> 5) & 1) * 8
+	.endrep
+; the random walk's choices (logic, TRAJ = 1)
+RDX:	.byte	0, 1, $FF, 2, $FE, 2, $FE, 1	; columns a commit
+RDY:	.byte	0, 2, $FE, 2, $FE, 0, 2, $FE	; lines a vertical step
+RGAP:	.byte	2, 2, 2, 3, 3, 4, 5, 7		; fields between commits
+RVD:	.byte	1, 1, 2, 3			; fields between vertical steps
+DGX:	.byte	2, 2, $FE, $FE			; a fast diagonal's direction
+DGY:	.byte	2, $FE, $FE, 2

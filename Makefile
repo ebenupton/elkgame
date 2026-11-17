@@ -10,6 +10,8 @@
 #   START_WX, START_WY   the map position at start (START_WY even)
 #   TRAJ=1               a random walk (seeded by SEED) instead of the script
 #   SEED                 the random walk's seed
+#   MOTION=1             moving from the start (else SPACE starts and stops it)
+#   SCHED=0              boot into the FPGA ULA's lead-in schedule (default 8: the real ULA's)
 # e.g.  make BUILD=build/rw TRAJ=1 SEED=4321
 #
 # BUILD may be any directory; tools need python3, ca65 and ld65 (cc65), and for the
@@ -21,7 +23,7 @@ PYTHON  ?= python3
 CA65    ?= ca65
 LD65    ?= ld65
 
-DEFINES := $(foreach v,START_WX START_WY TRAJ SEED,$(if $($(v)),-D $(v)=$($(v))))
+DEFINES := $(foreach v,START_WX START_WY TRAJ SEED MOTION SCHED,$(if $($(v)),-D $(v)=$($(v))))
 
 SRC     := $(wildcard src/*.s src/*.inc)
 EMUBUILD ?= build-emu
@@ -37,9 +39,9 @@ $(GEN)/stamp: tools/gen.py tools/swatch35.py
 # The sideways RAM image (elk.bin) and, from the same link, the keyboard routine
 # (kbd.bin) and the labels (elk.lbl, which the tests read).  ld65 runs in $(BUILD)
 # because the configuration names two output files.
-$(BUILD)/elk.bin: $(SRC) $(GEN)/stamp cfg/elk.cfg $(BUILD)/defines
+$(BUILD)/elk.bin: $(SRC) $(GEN)/stamp cfg/elk.cfg $(BUILD)/defines Makefile
 	$(CA65) -g -I src -I $(GEN) $(DEFINES) -l $(BUILD)/elk.lst -o $(BUILD)/elk.o src/elkscroll.s
-	cd $(BUILD) && $(LD65) -C $(abspath cfg/elk.cfg) -m elk.map -Ln elk.lbl -o /dev/null elk.o
+	cd $(BUILD) && $(LD65) -C $(abspath cfg/elk.cfg) -m elk.map -Ln elk.lbl --dbgfile elk.dbg -o /dev/null elk.o
 
 # The loader carries both into one file, loaded and run at &2000.
 $(BUILD)/elkscroll: src/loader.s cfg/loader.cfg $(BUILD)/elk.bin

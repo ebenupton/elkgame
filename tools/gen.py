@@ -48,7 +48,7 @@ RING = 0x5000      # the 20K screen ring the ULA wraps (&3000-&7FFF)
 ROWB = 576         # bytes in a ring row: 72 characters
 
 # ---- the ULA's mode register values (&FE07; comms off, LED and motor off) ----------
-M1, M3, M4, M5, M6 = 0x08, 0x18, 0x20, 0x28, 0x30
+M1, M3, M5, M6 = 0x08, 0x18, 0x28, 0x30
 M7 = 0x38          # mode value 7: fetches like MODE 4 (40 columns), but the real ULA
                    # wraps it at &8000 to &3000 (MODE 5 wraps to &5800)
 
@@ -289,14 +289,12 @@ def table(name, vals, align=True):
 
 
 def lead_in_index():
-    """The variant number u for each table index (wx & 7) | 8 (real-ULA schedule) |
-    16 (a row fetched this field has &8000 at its character 8).  FPGA: u = t.  Real
-    ULA: u = t + 1 (the switch out of the 40-column mode costs a character fewer) and
-    0 for t = 0; the unsafe case needs nothing different since the lead-in is mode 7,
-    which wraps to &3000 (DESIGN.md 4.3)."""
+    """t = (WIN_C - wx) & 7 for each wx & 7, and the variant number u for each table
+    index (wx & 7) | 8 (the real ULA's schedule).  FPGA ULA: u = t.  Real ULA: u = t + 1
+    (its switch out of the 40-column mode costs a character fewer), 0 when t = 0
+    (DESIGN.md 4.3)."""
     tx = [(WIN_C - x) & 7 for x in range(8)]
-    ux = [(0 if tx[x] == 0 else tx[x] + 1) if real else tx[x]
-          for _unsafe in (0, 1) for real in (0, 1) for x in range(8)]
+    ux = [(0 if tx[x] == 0 else tx[x] + 1) if real else tx[x] for real in (0, 1) for x in range(8)]
     return tx, ux
 
 
@@ -331,19 +329,9 @@ def gen_tables():
     for seg in SCRIPT:
         scr += [seg[0], seg[1] & 255, seg[2], seg[3] & 255, seg[4]]
     L += table('SCRIPT', scr + [0])
-    # UNSB[hi - &30] bit q: the ring row starting at &3000 + 64 s, s = 4 (hi - &30) + q,
-    # is one whose character 8 is &8000 for some row of the field
-    uns = []
-    for hi in range(0x50):
-        v = 0
-        for q in range(4):
-            s = 4 * hi + q
-            if any((s + 9 * n) % 320 == 319 for n in range(-1, 28)):
-                v |= 1 << q
-        uns.append(v)
-    L += table('UNSB', uns)
     # lead-in dispatch, by lead_in_index(): the variant of each loop part, the mode
-    # value of the blip (M5 when u = 0) and of the +17 write (M1 when u = 0, else mode 7)
+    # value of the blip (M5 when u <= 1) and of the +17 write (M1 when u = 0, else mode 7);
+    # LE (the notch) and T_BY_X share their page
     tx, ux = lead_in_index()
     for part in ('1', 'P', '2'):
         L.append(f'VS{part}_BY_X:\t.byte ' + ','.join(f'<VS{part}{u}' for u in ux))
@@ -353,17 +341,17 @@ def gen_tables():
     L.append('VA_BY_X:\t.byte ' + ','.join(f'${M5 if u < 2 else M1:02X}' for u in ux))
     L.append('VC_BY_X:\t.byte ' + ','.join(f'${M7 if u else M1:02X}' for u in ux))
     L.append('T_BY_X:\t.byte ' + ','.join(str(t) for t in tx))
+    L.append('\tNOCROSS\tVS1_BY_X, T_BY_X + 8 - VS1_BY_X')
     return '\n'.join(L) + '\n', pe, po
 
 
 def gen_config():
     p8, p9 = palette_bytes()
-    nr = (H + 7) // 8 + 1
     return '\n'.join([
         HEADER,
         f'Y0 = {Y0}', f'Y1 = {Y1}', f'H = {H}', f'WIN_C = {WIN_C}', f'WIN_W = {WIN_W}',
-        f'NR = {nr}', f'GAP = {72 - WIN_W}', 'MARG = 0',
-        f'M1 = ${M1:02X}', f'M3 = ${M3:02X}', f'M4 = ${M4:02X}', f'M5 = ${M5:02X}', f'M6 = ${M6:02X}',
+        f'GAP = {72 - WIN_W}',
+        f'M1 = ${M1:02X}', f'M3 = ${M3:02X}', f'M5 = ${M5:02X}', f'M6 = ${M6:02X}', f'M7 = ${M7:02X}',
         f'NSNIP = {NSNIP}', f'SNSTR = {SNSTR}',
         f'PAL8 = ${p8:02X}', f'PAL9 = ${p9:02X}',
     ]) + '\n'

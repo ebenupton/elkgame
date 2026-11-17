@@ -14,6 +14,12 @@ SEED = $ACE1			; the random walk's seed (TRAJ = 1)
 	.ifndef	TRAJ
 TRAJ = 0			; 0: the demo script (gen.py SCRIPT); 1: a random walk
 	.endif
+	.ifndef	MOTION
+MOTION = 0			; 1: moving from the start (else SPACE starts and stops it)
+	.endif
+	.ifndef	SCHED
+SCHED = 8			; the lead-in schedule at start: 8 the real ULA's, 0 the FPGA's
+	.endif
 	.ifndef	DYMAX
 DYMAX = 2			; lines a field, at most (one notch class a field)
 	.endif
@@ -65,15 +71,20 @@ init:	sei
 	sta	lfsr+1
 	lda	#0
 	sta	fpar
-	sta	ladj
 	sta	kprev
-	lda	#8			; boot into the real ULA's lead-in schedule
+	lda	#SCHED			; the lead-in schedule
 	sta	sched
 	lda	#0
 	sta	kprv2
 	sta	kpend
 	sta	kspp
+	.if	MOTION
+	lda	#1
 	sta	autob
+	lda	#0
+	.else
+	sta	autob
+	.endif
 	sta	KSPC
 	sta	KEYS
 	sta	cnext
@@ -161,9 +172,7 @@ boot_sync:
 	bne	@w2
 	iny
 	jmp	@w2
-@de:	stx	bcount
-	sty	bcount+1
-	; F = (count < threshold) ? 1 : 0
+@de:	; F = (count < threshold) ? 1 : 0
 	lda	#0
 	cpx	#<CAL_BTHR
 	tya
@@ -173,7 +182,7 @@ boot_sync:
 	eor	#1			; 1 if short count: the 313-line field
 	sta	fpar
 	; to the next field's line 0: (312 + F - 255) lines from display end
-	DELAY	200			; past line 256 before a MODE 1 top mode
+	DELAY	208			; past line 256 before a MODE 1 top mode
 	lda	topmode
 	sta	ULA_MODE
 	lda	fpar

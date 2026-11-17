@@ -62,7 +62,6 @@ setup_frame:
 	ror	a
 	sta	tmp			; y0 low; tmp+1 = y0 high (0 or 1)
 	jsr	rowaddr			; A:Y = &3000 + (576 y0 + cb8) mod &5000 (Y high)
-	sty	a0h
 	; S = that - 640 f
 	sec
 	sbc	F640L,x
@@ -77,29 +76,11 @@ setup_frame:
 	ror	a
 	and	#$E0
 	sta	fe02v
-	; the variants: index (wx & 7) | schedule | 16 if a row fetched this frame has &8000
-	; at its character 8 (UNSB, by the first graphics row's address)
-	ldy	a0h
-	lda	ra
-	rol	a
-	rol	a
-	rol	a
-	and	#3
-	tax
-	lda	QMASK,x
-	and	UNSB-$30,y
-	cmp	#1
-	lda	#0
-	rol	a
-	asl	a
-	asl	a
-	asl	a
-	asl	a
-	sta	tmp
+	; the lead-in: the variants of the loop's three parts and the two mode values, by
+	; (wx & 7) | sched (0: the FPGA ULA's schedule, 8: the real ULA's)
 	lda	wx
 	and	#7
 	ora	sched
-	ora	tmp
 	tax
 	lda	VS1_BY_X,x
 	sta	VVEC1
@@ -121,7 +102,6 @@ setup_frame:
 	lda	VC_BY_X,x
 	sta	vcv
 	rts
-QMASK:	.byte	1, 2, 4, 8
 
 ; A:Y <- &3000 + (576 * row + cb8) mod &5000, row in tmp (low), tmp+1 (0/1).
 ; Keeps X.
