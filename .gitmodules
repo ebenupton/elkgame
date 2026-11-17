@@ -1,0 +1,4 @@
+[submodule "emu/clk"]
+	path = emu/clk
+	url = https://github.com/ebenupton/CLK.git
+	branch = elk-headless

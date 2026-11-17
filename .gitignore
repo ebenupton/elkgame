@@ -1,0 +1,8 @@
+build/
+build-emu/
+build-emu.log
+roms/
+out/
+__pycache__/
+*.pyc
+.DS_Store
