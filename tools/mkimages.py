@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""Disc and tape images of the scroll test.
+"""Disc and tape images of the scroll demo.
 
-    python3 mkimages.py BINARY OUTDIR
+    python3 tools/mkimages.py BINARY OUTDIR
 
-Writes OUTDIR/elkscroll.ssd (DFS, 80 tracks, single-sided: !BOOT *RUNs ELKSCRL; boot
-option 3, so SHIFT+BREAK starts it -- Plus 3 with a DFS, MMFS on an ElkSD, a Gotek...)
-and OUTDIR/elkscroll.uef (the same program on tape: *RUN or CHAIN"" and PLAY).
-The program loads and runs at &2000."""
+Writes OUTDIR/elkscroll.ssd, a DFS disc (80 tracks, single-sided) whose !BOOT *RUNs
+ELKSCRL, with boot option 3 so that SHIFT+BREAK starts it (a Plus 3 with a DFS, MMFS on
+an ElkSD, a Gotek, ...), and OUTDIR/elkscroll.uef, the same program on tape (*RUN or
+CHAIN"" and PLAY).  The program loads and runs at &2000."""
 import os
 import struct
 import sys
-import zlib
 
 NAME = 'ELKSCRL'
 LOAD = EXEC = 0x2000
 
 
 def ssd(data, title='ELK SCROLL'):
+    """A DFS disc image holding !BOOT and the program."""
     boot = b'*RUN ' + NAME.encode() + b'\r'
     files = [('!BOOT', boot, 0, 0), (NAME, data, LOAD, EXEC)]
     sectors = 800
@@ -46,14 +46,16 @@ def ssd(data, title='ELK SCROLL'):
         img[256 + e + 3] = (exe >> 8) & 255
         img[256 + e + 4] = ln & 255
         img[256 + e + 5] = (ln >> 8) & 255
-        hi = lambda a: 3 if a >= 0x10000 or a == 0 and False else (a >> 16) & 3
+        # start sector bits 8-9, load address bits 16-17 (&FFFF: the I/O processor's),
+        # length bits 16-17, execution address bits 16-17 (likewise)
         img[256 + e + 6] = ((start >> 8) & 3) | (3 << 2) | (((ln >> 16) & 3) << 4) | (3 << 6)
         img[256 + e + 7] = start & 255
     return bytes(img)
 
 
 def crc16(data):
-    """Acorn CFS block CRC (polynomial &1021, initial 0, MSB first)."""
+    """The Acorn tape filing system's block CRC (CRC-16/XMODEM: polynomial &1021,
+    initial 0, MSB first)."""
     crc = 0
     for b in data:
         crc ^= b << 8
@@ -64,6 +66,7 @@ def crc16(data):
 
 
 def uef(data):
+    """A UEF tape image: 256-byte CFS blocks with carrier tone between them."""
     out = bytearray(b'UEF File!\0' + bytes([10, 0]))
 
     def chunk(cid, body):
@@ -79,15 +82,14 @@ def uef(data):
         blk = b'*' + hdr + struct.pack('>H', crc16(hdr)) + part + struct.pack('>H', crc16(part))
         chunk(0x0100, blk)
         chunk(0x0110, struct.pack('<H', 600 if n < nblocks - 1 else 2000))
-    return zlib.compress(bytes(out))  # UEF files are commonly gzipped; CLK accepts both
+    return bytes(out)
 
 
 def main(binary, outdir):
     data = open(binary, 'rb').read()
     os.makedirs(outdir, exist_ok=True)
     open(os.path.join(outdir, 'elkscroll.ssd'), 'wb').write(ssd(data))
-    raw = zlib.decompress(uef(data))
-    open(os.path.join(outdir, 'elkscroll.uef'), 'wb').write(raw)
+    open(os.path.join(outdir, 'elkscroll.uef'), 'wb').write(uef(data))
     print(f'{len(data)} bytes -> elkscroll.ssd, elkscroll.uef')
 
 

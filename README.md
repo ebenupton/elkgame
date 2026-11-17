@@ -60,8 +60,9 @@ Electron MOS 1.00) and `basic.rom` (BASIC II), in `roms/` or the directory named
 The engine was developed against Clock Signal's core corrected to match hoglet's
 ElectronFpga HDL, then against measurements from probe programs run on an issue 6
 Electron, which showed where the real ULA differs (the two schedules above).  It is
-checked in the emulator field by field: tens of millions of fields of random
-trajectories on both ULA models, every window pixel compared with the pattern
+checked in the emulator field by field, every window pixel against the pattern, on
+random trajectories and both ULA models. This build has passed 4 million fields; the
+build it was imported from passed 7.2 million, and a 55-wide sibling 31.2 million
 (`docs/VERIFICATION.md`).  **This build has not yet been run on a real Electron**;
 the probe discs it was derived from have.
 
