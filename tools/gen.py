@@ -245,8 +245,6 @@ def gen_variants():
     vx = ['\tlda\t#$FF', '\tsta\tULA_PAL8', '\tsta\tULA_PAL9', '\tlda\t#M6', '\tsta\tULA_MODE', '\tjmp\twork']
     L += ['VPAGE:', f'\t.res\t{M1}', 'VX:'] + vx + [f'\t.res\t{M7 - M1 - 16}'] + vx
     for part in ('2', '1', 'P'):
-        if part != '2':
-            L.append('\t.align\t256')
         for u in range(9):
             L.append(f'VS{part}{u}:')
             if u:
