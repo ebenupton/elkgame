@@ -309,11 +309,9 @@ def gen_tables():
     L += table('PO', po)
     L += table('PEM', [b & 0x77 for b in pe])
     L += table('POM', [b & 0x77 for b in po])
-    L += table('ZERO', [0] * 256)
     # ring arithmetic: hi byte of an address that may have left &3000-&7FFF -> back in
     L += table('WRAPHI', [(h - 0x50) & 0xFF if h >= 0x80 else (h + 0x50) & 0xFF if h < 0x30 else h
                           for h in range(256)])
-    L += table('IDHI', list(range(256)))
     # hi byte of a sum < &A000 -> (mod &5000) + &30: a ring address
     L += table('RINGHI', [((h % 0x50) + 0x30) if h < 0xA0 else 0 for h in range(256)])
     # map coordinates: hi byte mod &0A (2560 = &0A00); block row + 1 mod 160; the hi
