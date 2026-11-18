@@ -258,23 +258,25 @@ def gen_variants():
 
 
 def gen_snips():
-    """The strip: NSNIP row snippets of SNSTR bytes, and the dummy one (DESIGN.md 5.2).
-    Snippet p stores, for line X of its character row, the entering column's byte
-    (from VBUF) at SNpA1 and a zero at SNpA2 -- both operands patched by build --
-    writes MODE 3 in the sync and the +17 mode value (Y), and jumps to the variant."""
-    def body(n, vbuf, vec):
-        return [f'\tlda\tVBUF+{vbuf},x' if n is not None else '\tlda\tVBUF,x',
-                f'SN{n}A1:\tsta\ta:DUMMY,x' if n is not None else '\tsta\ta:DUMMY,x',
+    """The strip: NSNIP row snippets of SNSTR bytes, and the dummy one (DESIGN.md 5.1).
+    Snippet p stores, for line X of its character row, the entering column's byte at
+    SNpA1 and a zero at SNpA2 -- both operands patched by build -- writes MODE 3 in the
+    sync and the +17 mode value (Y), and jumps to the variant.  Its row's eight
+    entering bytes are its last eight bytes (SNpD), filled by build: the load stays in
+    the snippet's page and needs no index of its own."""
+    def body(lab, vec):
+        return [f'\tlda\t{lab}D,x', f'{lab}A1:\tsta\ta:DUMMY,x',
                 '\tlda\t#M3', '\tsta\tULA_MODE', '\tlda\t#0',
-                f'SN{n}A2:\tsta\ta:DUMMY,x' if n is not None else '\tsta\ta:DUMMY,x',
-                '\tsty\tULA_MODE', '\tlda\t#M1', f'\tjmp\t({vec})']
+                f'{lab}A2:\tsta\ta:DUMMY,x',
+                '\tsty\tULA_MODE', '\tlda\t#M1', f'\tjmp\t({vec})',
+                f'{lab}D:\t.res\t8']
     L = [HEADER, '\t.segment "SNIPS"']
-    for p in range(NSNIP - 1):
-        L += [f'SN{p}:'] + body(p, 8 * p, 'VVEC2') + [f'\t.res\t{SNSTR - 24}']
-    # The last is never built: only the exit iteration can reach it, ahead of the
-    # beam, where its stores are not needed
-    L += [f'SN{NSNIP - 1}:'] + body(None, 0, 'VVEC2')
-    L += ['DSNIP:'] + body(None, 0, 'VVEC1')
+    for p in range(NSNIP):
+        L += [f'SN{p}:'] + body(f'SN{p}', 'VVEC2')
+        L.append(f'\t.assert\t* - SN{p} = SNSTR, error, "a snippet is SNSTR bytes"')
+    # (the last is never built: only the exit iteration can reach it, ahead of the
+    # beam, where its stores are not needed; build leaves it storing to DUMMY)
+    L += ['DSNIP:'] + body('DSNIP', 'VVEC1')
     return '\n'.join(L) + '\n'
 
 

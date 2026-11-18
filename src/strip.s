@@ -14,21 +14,116 @@
 ; the cell in column sxout (it stores zero).  Ahead of the beam (smode 1) iteration y
 ; stores line y+1's bytes; behind it (smode 2), line y's.  The last snippet is never
 ; built (only the exit iteration reaches it, ahead of the beam, where it is not needed).
+; strip.s -- building the beam-raced strip for the next field (docs/DESIGN.md 5.1).
+; Fixed length.
+;
+; A coarse step's entering column is written into the ring during the field that first
+; shows it (or, for a 2-column step's first column, the field before), one byte and
+; one zero per window line, in the line's horizontal blanking, by the snippets the
+; scanline loop jumps through (gen_snips.s).  One snippet serves a character row: its
+; two stores are indexed by X, the line within the row, so the builder patches four
+; operand bytes and fills eight data bytes (the snippet's last eight, SNpD) a row.
+;
+; smode 0 (idle): every snippet stores to the dummy page, in the same time.  Otherwise
+; snippet p is row (top & ~1) + p: its first store's address is that row's cell in
+; column sxin and its data the pattern's there; its second store's address is the
+; cell in column sxout (it stores zero).  Ahead of the beam (smode 1) iteration y
+; stores line y+1's bytes; behind it (smode 2), line y's.  The last snippet is left
+; storing to the dummy (only the exit iteration reaches it, ahead of the beam, where
+; it is not needed).
+;
+; The rows are built two at a time (the two rows of a block row share the pattern's
+; colour), by a loop over the snippets eight to a page (X steps 2 x SNSTR), once for
+; each of the three pages they occupy.
+
+SN_A1	= SN0A1 - SN0			; offsets in a snippet: the first store,
+SN_A2	= SN0A2 - SN0			; the second store,
+SN_D	= SN0D - SN0			; the row's eight bytes
+	.assert	SNSTR * 8 = 256, error, "build assumes eight snippets a page"
+	.assert	NSNIP = 25, error, "build assumes 24 built snippets and a dummy"
+
+; NEXTCELL cur, prev, ofs: the store at ofs in snippet cur,x <- the one in prev,x plus
+; 576 (the next ring row), wrapped back into &3000-&7FFF.  Fixed time; clobbers A, Y.
+	.macro	NEXTCELL cur, prev, ofs
+	lda	prev+ofs+1,x
+	clc
+	adc	#<576
+	sta	cur+ofs+1,x
+	lda	prev+ofs+2,x
+	adc	#>576
+	tay
+	lda	WRAPHI,y
+	sta	cur+ofs+2,x
+	.endmacro
+
+; BPAGE base: the four row pairs whose first snippet is in the page at base (X = 0,
+; 64, 128, 192): their data, and the cells of each pair's second row and the next
+; pair's first.  Fixed time.
+	.macro	BPAGE	base
+	.local	lp, done
+	ldx	#0
+lp:	lda	byr			; the pair's hash value: PERM[block] + block row
+	clc
+	adc	permbx
+	tay
+	lda	PO,y			; odd lines: 1 3 5 (and 7 in the even row)
+	and	pmask
+	sta	base+SN_D+1,x
+	sta	base+SN_D+3,x
+	sta	base+SN_D+5,x
+	sta	base+SN_D+7,x
+	sta	base+SNSTR+SN_D+1,x
+	sta	base+SNSTR+SN_D+3,x
+	sta	base+SNSTR+SN_D+5,x
+	lda	PE,y			; even lines: 0 2 4 6
+	and	pmask
+	sta	base+SN_D+0,x
+	sta	base+SN_D+2,x
+	sta	base+SN_D+4,x
+	sta	base+SN_D+6,x
+	sta	base+SNSTR+SN_D+0,x
+	sta	base+SNSTR+SN_D+2,x
+	sta	base+SNSTR+SN_D+4,x
+	sta	base+SNSTR+SN_D+6,x
+	lda	#0			; the odd row's line 7: the grid line
+	sta	base+SNSTR+SN_D+7,x
+	ldy	byr			; the next block row, mod 160
+	lda	MOD160+1,y
+	sta	byr
+	NEXTCELL base+SNSTR, base, SN_A1
+	NEXTCELL base+SNSTR, base, SN_A2
+	NEXTCELL base+2*SNSTR, base+SNSTR, SN_A1
+	NEXTCELL base+2*SNSTR, base+SNSTR, SN_A2
+	txa
+	clc
+	adc	#2*SNSTR
+	tax
+	beq	done			; (fixed time: X takes the same four values every field)
+	jmp	lp
+done:
+	.endmacro
+
 	.segment "CODE"
 build:	lda	smode
 	beq	:+
 	jmp	b_real
-:
-	lda	#<DUMMY
-	.repeat	NSNIP-1, p
-	sta	.ident(.sprintf("SN%dA1", p))+1
-	sta	.ident(.sprintf("SN%dA2", p))+1
+:	ldx	#0			; idle: every built snippet stores to the dummy
+@idle:	lda	#<DUMMY
+	.repeat	3, g
+	sta	SN0+256*g+SN_A1+1,x
+	sta	SN0+256*g+SN_A2+1,x
 	.endrep
 	lda	#>DUMMY
-	.repeat	NSNIP-1, p
-	sta	.ident(.sprintf("SN%dA1", p))+2
-	sta	.ident(.sprintf("SN%dA2", p))+2
+	.repeat	3, g
+	sta	SN0+256*g+SN_A1+2,x
+	sta	SN0+256*g+SN_A2+2,x
 	.endrep
+	txa
+	clc
+	adc	#SNSTR
+	tax
+	bne	@idle
+	.assert	>@idle = >*, error, "the idle loop must not cross a page"
 	LDELAY	CAL_BI1
 	LDELAY	CAL_BI2
 	LDELAY	CAL_BI3
@@ -89,55 +184,15 @@ b_real:	lda	wy			; from the even row at or above the top row
 	lda	grow
 	ror	a
 	sta	byr
-	.repeat	NSNIP-1, q
-	.if	q > 0			; the row below: +576, back into the ring
-	lda	.ident(.sprintf("SN%dA1", q-1))+1
-	clc
-	adc	#$40
-	sta	.ident(.sprintf("SN%dA1", q))+1
-	lda	.ident(.sprintf("SN%dA1", q-1))+2
-	adc	#$02
-	tax
-	lda	WRAPHI,x
-	sta	.ident(.sprintf("SN%dA1", q))+2
-	lda	.ident(.sprintf("SN%dA2", q-1))+1
-	clc
-	adc	#$40
-	sta	.ident(.sprintf("SN%dA2", q))+1
-	lda	.ident(.sprintf("SN%dA2", q-1))+2
-	adc	#$02
-	tax
-	lda	WRAPHI,x
-	sta	.ident(.sprintf("SN%dA2", q))+2
-	.endif
-	.if	(q & 1) = 0		; a pair of rows is one colour row
-	.if	q > 0
-	ldx	byr
-	lda	MOD160+1,x
-	sta	byr
-	.else
-	lda	byr
-	.endif
-	clc
-	adc	permbx
-	tay
-	.endif
-	lda	PE,y
-	and	pmask
-	sta	VBUF+8*q
-	sta	VBUF+8*q+2
-	sta	VBUF+8*q+4
-	sta	VBUF+8*q+6
-	lda	PO,y
-	and	pmask
-	sta	VBUF+8*q+1
-	sta	VBUF+8*q+3
-	sta	VBUF+8*q+5
-	.if	(q & 1) = 1		; the odd row's line 7 is the grid's
-	lda	#0
-	.endif
-	sta	VBUF+8*q+7
-	.endrep
+	BPAGE	SN0
+	BPAGE	SN0+256
+	BPAGE	SN0+512
+	lda	#<DUMMY			; the last snippet: back to the dummy
+	sta	SN0+24*SNSTR+SN_A1+1
+	sta	SN0+24*SNSTR+SN_A2+1
+	lda	#>DUMMY
+	sta	SN0+24*SNSTR+SN_A1+2
+	sta	SN0+24*SNSTR+SN_A2+2
 bfin:	lda	wy			; the top row's snippet: 0 or 1
 	and	#8
 	asl	a

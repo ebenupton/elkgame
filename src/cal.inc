@@ -22,12 +22,12 @@ CAL_NOC3  = 1200
 CAL_NOC   = 248
 CAL_BI1   = 1000    ; an idle strip build, padded to the real one's length (strip.s)
 CAL_BI2   = 1000
-CAL_BI3   = 706
+CAL_BI3   = 878
 
 ; ---- the delay to the next lock (frame_tail): CAL_N64 (+2 in the 313-line field)
 ; passes of 64 cycles and CAL_REM, after the fixed work ----
-CAL_N64   = 5
-CAL_REM   = 138
+CAL_N64   = 1
+CAL_REM   = 10
 
 ; ---- the bootstrap (init.s, boot_sync) ----
 CAL_BTHR  = $594    ; poll count from the RTC flag to display end: fewer = the 313-line field

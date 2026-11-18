@@ -4,8 +4,6 @@
 
 	.segment "VARS"
 	.align	256
-VBUF:	.res	8*NSNIP			; each snippet's eight bytes: the entering column's
-	NOCROSS	VBUF, 8*NSNIP
 
 ; ---- the scanline loop's parameters for the next field (setup_frame, build) ----
 sptr:	.res	2			; the snippet of the row the next window line is in
