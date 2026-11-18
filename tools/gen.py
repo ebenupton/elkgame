@@ -319,25 +319,32 @@ def gen_tables():
     L += table('MAPHI', [0 if h == 0x0A else (0x09 if h == 0xFF else h) for h in range(256)])
     # (576 * row) mod &5000 for rows 0..319, lo and hi tables of 320
     r576 = [(ROWB * y) % RING for y in range(320)]
-    L += table('R576L', [v & 255 for v in r576])
-    L += table('R576H', [v >> 8 for v in r576])
-    scr = []
-    for seg in SCRIPT:
-        scr += [seg[0], seg[1] & 255, seg[2], seg[3] & 255, seg[4]]
-    L += table('SCRIPT', scr + [0])
-    # lead-in dispatch, by lead_in_index(): the variant of each loop part, the mode
-    # value of the blip (M5 when u <= 1) and of the +17 write (M1 when u = 0, else mode 7);
-    # LE (the notch) and T_BY_X share their page
+    L += table('R576L', [v & 255 for v in r576[:256]])
+    L += table('R576H', [v >> 8 for v in r576[:256]])
+    # rows 256..319: the two 64-entry tails share a page (indexed 0..63, no crossing)
+    L += table('R576LT', [v & 255 for v in r576[256:]])
+    L += table('R576HT', [v >> 8 for v in r576[256:]], align=False)
+    # the lead-in dispatch, by lead_in_index(), fills the rest of the tails' page: the
+    # variant of each loop part, the blip's mode value (M5 when u <= 1) and the +17
+    # write's (M1 when u = 0, else mode 7)
     tx, ux = lead_in_index()
     for part in ('1', 'P', '2'):
         L.append(f'VS{part}_BY_X:\t.byte ' + ','.join(f'<VS{part}{u}' for u in ux))
         L.append(f'VS{part}H_BY_X:\t.byte ' + ','.join(f'>VS{part}{u}' for u in ux))
-    # LE[4 c + k] = 1 if notch class c is due at phase k (c <= k)
-    L.append('LE:\t.byte ' + ','.join(str(int(c <= k)) for c in range(4) for k in range(4)))
     L.append('VA_BY_X:\t.byte ' + ','.join(f'${M5 if u < 2 else M1:02X}' for u in ux))
     L.append('VC_BY_X:\t.byte ' + ','.join(f'${M7 if u else M1:02X}' for u in ux))
+    L.append('\tNOCROSS\tR576LT, VC_BY_X + 16 - R576LT')
+    # small tables, unaligned, after the hand-written ones (segment TABLES3)
+    L.append('\t.segment "TABLES3"')
+    # LE[4 c + k] = 1 if notch class c is due at phase k (c <= k)
+    L.append('LE:\t.byte ' + ','.join(str(int(c <= k)) for c in range(4) for k in range(4)))
+    L.append('\tNOCROSS\tLE, 16')
     L.append('T_BY_X:\t.byte ' + ','.join(str(t) for t in tx))
-    L.append('\tNOCROSS\tVS1_BY_X, T_BY_X + 8 - VS1_BY_X')
+    L.append('\tNOCROSS\tT_BY_X, 8')
+    scr = []
+    for seg in SCRIPT:
+        scr += [seg[0], seg[1] & 255, seg[2], seg[3] & 255, seg[4]]
+    L += table('SCRIPT', scr + [0], align=False)
     return '\n'.join(L) + '\n', pe, po
 
 

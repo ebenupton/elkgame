@@ -123,11 +123,11 @@ rowaddr:
 	lda	R576H,y
 	jmp	@sum
 @hi:	nop				; (balances the jmp)
-	lda	R576L+256,y
+	lda	R576LT,y
 	clc
 	adc	cb8
 	sta	ra
-	lda	R576H+256,y
+	lda	R576HT,y
 @sum:	adc	cb8+1
 	tay
 	lda	RINGHI,y
@@ -158,11 +158,11 @@ addrow:
 	lda	R576H,y
 	jmp	@s
 @hi:	nop				; (balances the jmp)
-	lda	R576L+256,y
+	lda	R576LT,y
 	clc
 	adc	ra
 	pha
-	lda	R576H+256,y
+	lda	R576HT,y
 @s:	adc	ra+1
 	tay
 	lda	RINGHI,y
