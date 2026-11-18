@@ -43,6 +43,8 @@
 //   auditdump FILE         write the sideways RAM store counts; print the audit summary
 //   race N                 N fields: every screen store against the same field's
 //                          display fetches of that byte (a histogram of the gap)
+//   swatch HEXADDR N       N fields: print every store to that sideways RAM address
+//                          (field, line, h, value) -- for following a variable
 
 #include <algorithm>
 #include <cstdlib>
@@ -357,6 +359,19 @@ int main(int argc, char **argv) {
 		else if(cmd == "audit") { audit.start(m); }
 		else if(cmd == "auditdump") { need(1); audit.report(args[++i]); }
 		else if(cmd == "race") { need(1); race(m, std::atoi(args[++i].c_str())); }
+		else if(cmd == "swatch") {
+			need(2);
+			const unsigned wa = hex(args[++i]) & 0x3fff;
+			const int n = std::atoi(args[++i].c_str());
+			elk::Machine *mp = &m;
+			const int f0 = m.video_.fields_completed;
+			auto previous = m.swram_write_hook;
+			m.swram_write_hook = [mp, wa, f0](uint8_t, uint16_t a, uint8_t v) {
+				if((a & 0x3fff) == wa) std::printf("swatch field %d line %d h %d: %02x\n", mp->video_.fields_completed - f0, int(mp->video_.v_count_), int(mp->video_.h_count_), unsigned(v));
+			};
+			elk::run_fields(m, n);
+			m.swram_write_hook = previous;
+		}
 		else { std::fprintf(stderr, "elkh: unknown command %s\n", cmd.c_str()); return 1; }
 	}
 	return 0;

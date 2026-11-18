@@ -9,16 +9,16 @@
 ; PADN n: exactly n cycles (n = 0 or n >= 2) of nop, with one jmp *+3 for an odd n.
 ; Changes no register or flag.
 	.macro	PADN	n
-	.if	n = 0
-	.elseif	n = 1
+	.if	(n) = 0
+	.elseif	(n) = 1
 	.error	"PADN 1"
-	.elseif	(n & 1) = 1
+	.elseif	((n) & 1) = 1
 	jmp	*+3
-	.repeat	(n-3)/2
+	.repeat	((n)-3)/2
 	nop
 	.endrep
 	.else
-	.repeat	n/2
+	.repeat	(n)/2
 	nop
 	.endrep
 	.endif
@@ -29,11 +29,11 @@
 ; a page (asserted).  Clobbers A and the flags.
 	.macro	DELAY	n
 	.local	lp
-	.if	n < 14
-	PADN	n
+	.if	(n) < 14
+	PADN	(n)
 	.else
-	kk	.set	(n - 3) / 5
-	rr	.set	n - (5*kk + 3)
+	kk	.set	((n) - 3) / 5
+	rr	.set	(n) - (5*kk + 3)
 	.if	rr = 1
 	kk	.set	kk - 1
 	rr	.set	rr + 5
@@ -53,8 +53,8 @@ lp:	sbc	#1		; 2
 ; Clobbers A and the flags.
 	.macro	LDELAY	n
 	.local	ret
-	lk	.set	(n - 21) / 5
-	lr	.set	n - (5*lk + 21)
+	lk	.set	((n) - 21) / 5
+	lr	.set	(n) - (5*lk + 21)
 	.if	lr = 1
 	lk	.set	lk - 1
 	lr	.set	lr + 5

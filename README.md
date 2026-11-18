@@ -61,8 +61,9 @@ The engine was developed against Clock Signal's core corrected to match hoglet's
 ElectronFpga HDL, then against measurements from probe programs run on an issue 6
 Electron, which showed where the real ULA differs (the two schedules above).  It is
 checked in the emulator field by field, every window pixel against the pattern, on
-random trajectories and both ULA models. This build has passed 4 million fields; the
-build it was imported from passed 7.2 million, and a 55-wide sibling 31.2 million
+random trajectories and both ULA models. This build has passed 800,000 fields (its
+predecessors in this repository 4.8 million); the build it was imported from passed
+7.2 million, and a 55-wide sibling 31.2 million
 (`docs/VERIFICATION.md`).  **This build has not yet been run on a real Electron**;
 the probe discs it was derived from have.
 
@@ -83,11 +84,11 @@ make test       # a short soak of both ULA models (test/soak.sh: -n fields, -r r
 
 | Path | What |
 |---|---|
-| `src/` | the program: `elkscroll.s` (the root, which includes the rest in layout order), `raster.s` (the raster lock and the scanline loop), `frame.s` (the work below the window), `strip.s` (the beam-raced column), `colop.s` (a column step's edge rows), `notch.s` (the vertical step), `display.s` (the next field's display parameters), `logic.s` (the trajectory), `init.s` (start-up and the first raster sync), `kbd.s` (the keyboard, in main RAM), `tables.s`, `vars.s`, `loader.s` (finds a sideways RAM bank, loads, starts); `hw.inc`, `macros.inc` (cycle-exact delays, cell writers, page asserts), `cal.inc` (the frame's calibration) |
+| `src/` | the program: `elkscroll.s` (the root, which includes the rest in layout order), `raster.s` (the raster lock and the scanline loop; the window part is generated: two gadgets and sixteen line blocks), `frame.s` (the work below the window), `strip.s` (the beam-raced strip's first rows and per-field state), `colop.s` (a column step's edge rows), `notch.s` (the vertical step), `display.s` (the next field's display parameters), `logic.s` (the trajectory), `init.s` (start-up and the first raster sync), `kbd.s` (the keyboard, in main RAM), `tables.s`, `vars.s`, `loader.s` (finds a sideways RAM bank, loads, starts); `hw.inc`, `macros.inc` (cycle-exact delays, cell writers, page asserts), `cal.inc` (the frame's calibration) |
 | `cfg/` | linker configurations: the sideways RAM image, the loader |
-| `tools/` | `gen.py` (generated tables and code: lead-in variants, strip snippets, pattern, and the model the checks use), `swatch35.py` (the 35 dithered colours), `mkimages.py` (DFS disc and UEF tape images), `pagecheck.py` (branches that cross a page) |
+| `tools/` | `gen.py` (generated tables and code: lead-in variants, the window's gadgets and line blocks, pattern, and the model the checks use), `swatch35.py` (the 35 dithered colours), `mkimages.py` (DFS disc and UEF tape images), `pagecheck.py` (branches that cross a page) |
 | `emu/` | the emulator harness: `elkh.cpp`, `elkview.cpp`, `machine.hpp`, and the CLK fork (`emu/clk`, a submodule) |
-| `test/` | `soak.sh`, `soak1.sh` (the regression test), `fingerprint.sh`, `fpcompare.py` (timing equivalence of two builds) |
+| `test/` | `soak.sh`, `soak1.sh` (the regression test), `fingerprint.sh`, `fpcompare.py` (timing equivalence of two builds), `fpmarkers.py` (the fixed work's sections) |
 | `docs/` | `DESIGN.md` (how it works), `VERIFICATION.md` (how it is checked, and what is known), `ULA-NOTES.md` (the ULA behaviour it depends on, with sources) |
 
 **To understand the engine, read `docs/DESIGN.md`.**

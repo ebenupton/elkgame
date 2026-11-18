@@ -31,15 +31,15 @@ entry:	jmp	init			; &8000, from the loader, with A = this bank's number
 ; The scanline loop.  One iteration a line, 128 cycles.  Iteration y runs from the
 ; right margin of line y to the lead-in of line y+1 (us after S of line y):
 ;   -3     the blip: MODE 5 when the lead-in is 0 or 1 us (else MODE 1, no change)
-;   +5     the first store of the pair (window: the entering column's byte)
+;   0..14  two stores (in the window: the entering column's byte and the leaving zero)
 ;   +9     MODE 3, inside the line sync
-;   +14    the second store (window: the leaving column's zero)
 ;   +17    the lead-in mode: mode 7 (40 columns), or MODE 1 when there is no lead-in
+;          (+15 in the window's gadgets)
 ;   +23+u  MODE 1 (the variant, gen_variants.s; none when u = 0)
-; Three parts: loop 1, the lines above the window (both stores go to the dummy); the
-; palette line (iteration Y0-1, whose two stores are the palette's); loop 2,
-; iterations Y0..Y1-2, whose stores are a row snippet's (gen_snips.s).  In loop 2,
-; X = the line within the character row and Y = the +17 mode value.
+; Three parts: loop 1, the lines above the window (the dummy snippet DSNIP: both
+; stores to the dummy page); the palette line (iteration Y0-1, whose two stores are
+; the palette's); loop 2, the window (gen_loop2.s, below).  In loop 1 and the palette
+; line, Y is the lead-in mode value (vcv).
 	.segment "LOOP"
 frame_top:
 	lda	SYNCB			; stalls until S of line 0 -- or, issued late (after
@@ -55,7 +55,7 @@ bandl:	DELAY	123
 	nop
 fnob:
 	DELAY	CAL_PRE
-	ldy	vcv			; Y = the +17 mode value, for the whole loop
+	ldy	vcv			; Y = the lead-in mode value, for loop 1 and the palette line
 	ldx	#0
 	lda	n1
 	beq	@pal			; (no lines above the palette line's)
@@ -87,46 +87,28 @@ palb:	PADN	7
 	lda	#PAL9
 	sta	ULA_PAL9		; S+13
 	nop
-	sty	ULA_MODE		; S+17
+	sty	ULA_MODE		; S+17: the lead-in mode
 	lda	#M1
 	jmp	(VVECP)			; the lead-in variant
-backP:	ldx	k0			; X = the first window line's line within its row
-	DELAY	39
-	jmp	wl2
+backP:	ldx	vav			; X = the blip's mode value, through the window
+	DELAY	CAL_ENT
+wtP:	jmp	tA0			; patched: the tail that loads the first window line
 	.assert	>frame_top = >*, error, "loop 1 must sit in one page"
 
-; loop 2: the window
-	.segment "LOOP2"
-wl2:	PADN	3
-va2:	lda	#M1			; patched: the blip
-	sta	ULA_MODE		; S-3
-	jmp	(sptr)			; the row's snippet: both stores, MODE 3, the +17 write,
-					; then the variant, which returns to back2
-back2:	inx
-	cpx	#8
-	bne	same
-	ldx	#0			; the row's last line: the next row's snippet (C = 1)
-	lda	sptr
-	adc	#SNSTR-1
-	sta	sptr
-	lda	sptr+1
-	adc	#0
-	sta	sptr+1
-rtc:	lda	ULA_STAT		; (an I/O read: kept for its 1 MHz timing)
-	PADN	4
-	dec	lcnt			; the iterations left, 169..1
-	bne	wl2
-	; iteration Y1-1: the snippet once more (line Y1-1's bytes, behind the beam), whose
-	; variant is VX: black, and MODE 6 for the rest of the field (a text mode, so no
-	; contention, and display end is flagged at line 249).  Y is M1 or M5, the offsets
-	; of VX's two entries in the variants' page.
-	sty	VVEC2
-va3:	lda	#M1			; patched: the blip, for line Y1's row start
-	sta	ULA_MODE		; S-3
-	jmp	(sptr)
-same:	DELAY	18
-	jmp	rtc
-	.assert	>wl2 = >*, error, "loop 2 must sit in one page"
+; ---- loop 2: the window ---------------------------------------------------------------
+; Two gadgets of horizontal-blanking code, gA for even map rows and gB for odd, and
+; sixteen blocks of visible-part code, b{P}{k} after line k of a P row (gen_loop2.s):
+;   gadget (horizontal blanking): the entering byte (A) and the leaving zero, by the
+;     8-byte block 'sta in / lda #0 / sta out'; MODE 3 in the sync; the lead-in mode;
+;     the variant (VJ), which returns to the next block (VRET);
+;   block (the next line's visible part): its slice of the next row's preparation --
+;     the other gadget's two addresses (+576, ring-wrapped, from this gadget's), and
+;     the pattern bytes of the next colour pair; this gadget's two addresses stepped one
+;     byte down their cells; VRET <- the next block;
+;   tail (right margin): the blip (X), the next line's entering byte, the jump.
+; A row counter in the line-7 blocks arms the exit: one block, chosen per field, has
+; its 'sta VRET' turned into 'sta VJ' with VX, so the last line's gadget exits.
+	.include "gen_loop2.s"
 
 	.include "gen_variants.s"
 	.include "gen_snips.s"

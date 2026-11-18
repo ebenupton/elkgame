@@ -38,7 +38,7 @@
 	.include "hw.inc"		; ULA registers, fixed main-RAM addresses
 	.include "macros.inc"		; cycle-exact delays and the cell writers
 
-	.include "raster.s"		; the frame top, the scanline loop, lead-in variants, strip snippets
+	.include "raster.s"		; the frame top, the scanline loop (with the generated window code)
 	.include "init.s"		; start-up, the first picture, the bootstrap raster sync
 	.include "frame.s"		; the work below the window and the delay to the next lock
 	.include "logic.s"		; the trajectory: script, random walk, keys

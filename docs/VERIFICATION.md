@@ -63,6 +63,10 @@ with its raster position, for a build moving under no external input (`MOTION=1`
 - **lock**: where the lock read lands.
 
 This is how the cleanup of this repository was checked (section 4).
+`test/fpmarkers.py` splits one fingerprint's fixed work into its sections (the edge
+rows and the strip build) by the marker reads, for calibrating a change.  For following
+one variable through a field, `elkh swatch ADDR N` prints every store to a sideways RAM
+address.
 
 ## 4. Results
 
@@ -91,7 +95,9 @@ not been simulated on the HDL.**
 | 1, import | the soaked build split into modules | binary byte-identical to `beam_m7c57`'s (elk.bin, kbd.bin, loader, .ssd, .uef) |
 | 2, dead code out | dead code removed; page-crossing jitter removed from the fixed work | fingerprints of six trajectories (script and random walks, both models): every picture write identical in 23,880 fields, lock read's mean within 1.6 cycles. Soak: 8 runs × 100,000 fields, all clean |
 | 3, balanced helpers | `rowaddr` and `addrow` balanced | fingerprints: picture writes identical; the fixed work's spread falls from 32 to 24 cycles |
-| 3, final | the build in this repository | soak: 40 runs × 100,000 fields = 4 million fields (cases 101–140; 20 runs on each ULA model, 6 following the script), all clean: 0 wrong, 0 unlocked, 0 late, 0 pad, 0 blip, 0 stray stores, the same 634 sideways RAM addresses written in every run; variable work ended by line 242 at worst; lock read at h 360–648 of line 0 |
+| 3, balanced helpers (soak) | as above | soak: 40 runs × 100,000 fields = 4 million fields (cases 101–140; 20 runs on each ULA model, 6 following the script), all clean: 0 wrong, 0 unlocked, 0 late, 0 pad, 0 blip, 0 stray stores, the same 634 sideways RAM addresses written in every run; variable work ended by line 242 at worst; lock read at h 360–648 of line 0 |
+| 4, smaller | dead tables, `RTCLOG` and `VBUF` removed; timed segments packed; the snippet builder rolled up (about 4K smaller) | fingerprints: picture writes identical, lock read in the same place, at every step; soak: 24 runs × 50,000 fields, all clean |
+| 5, line blocks | the window loop rebuilt: two gadgets with absolute stores and sixteen line blocks that prepare the next row in the visible part; the strip builder 3,554 → ~950 cycles | the lead-in mode write moves from +17 to +15 µs (the phase model's coverage is unchanged, S 648–663); otherwise every write where the old loop put it, the fixed work and the lock read within 2 cycles of the original's (six fingerprinted trajectories). Soak: 16 runs × 50,000 fields = 800,000, both ULA models, all clean; variable work ended by line 242 at worst; lock read at h 344–664 |
 
 To run the soak yourself: `make emu`, put the ROMs in `roms/`, then
 `test/soak.sh -n 100000 -r 40`. With eight runs at once a run of 100,000 fields takes

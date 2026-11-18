@@ -4,21 +4,30 @@
 
 	.segment "VARS"
 	.align	256
-
 ; ---- the scanline loop's parameters for the next field (setup_frame, build) ----
-sptr:	.res	2			; the snippet of the row the next window line is in
-VVEC1:	.res	2			; the lead-in variant, for each part of the loop
+VVEC1:	.res	2			; the lead-in variant, for loop 1 and the palette line
 VVECP:	.res	2
-VVEC2:	.res	2
-	NOWRAP	sptr
 	NOWRAP	VVEC1
 	NOWRAP	VVECP
-	NOWRAP	VVEC2
-lcnt:	.res	1			; loop 2's iterations left
-k0:	.res	1			; X at the first window line: its line within its row
+k0:	.res	1			; the first window line's line within its row
+VRET:	.res	2			; loop 2: the next line's block (set by each block)
+VJ:	.res	2			; loop 2: the gadgets' jump: this field's variant, or VX
+	NOWRAP	VRET
+	NOWRAP	VJ
+vav:	.res	1			; the blip's mode value (X through loop 2)
+VE:	.res	1			; the entering column's bytes for this colour pair:
+VO:	.res	1			;   even lines, odd lines (an odd row's line 7 is 0)
+VEN:	.res	1			; and for the next pair
+VON:	.res	1
+VNX:	.res	1			; the next pair's hash value
+bq:	.res	1			; this pair's block row (0..159)
+rows:	.res	1			; line-7 blocks until the exit is armed
+hkprev:	.res	1			; the block (8 parity + line) whose hook the exit patched last field
+cin0:	.res	2			; strip.s: the first row's entering and leaving cells
+cout0:	.res	2
 n1:	.res	1			; loop 1's iterations (lines above the palette line's)
 cnt1:	.res	1			; (its counter)
-vcv:	.res	1			; the +17 mode value
+vcv:	.res	1			; the lead-in mode value (loop 1, the palette line)
 tv:	.res	1			; t, the lead-in in characters
 cb8:	.res	2			; 8 x the window's first fetched column
 band_n:	.res	1			; lines from line 0 to the first iteration

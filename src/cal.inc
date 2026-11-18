@@ -20,9 +20,9 @@ CAL_NOC1  = 1200    ; an idle field, in place of the edge rows (four LDELAYs)
 CAL_NOC2  = 1200
 CAL_NOC3  = 1200
 CAL_NOC   = 248
-CAL_BI1   = 1000    ; an idle strip build, padded to the real one's length (strip.s)
-CAL_BI2   = 1000
-CAL_BI3   = 878
+CAL_SPARE1 = 1000   ; strip.s: the builder's saving, given back as delay (2,604 cycles)
+CAL_SPARE2 = 1000
+CAL_SPARE3 = 574
 
 ; ---- the delay to the next lock (frame_tail): CAL_N64 (+2 in the 313-line field)
 ; passes of 64 cycles and CAL_REM, after the fixed work ----
@@ -33,3 +33,16 @@ CAL_REM   = 10
 CAL_BTHR  = $594    ; poll count from the RTC flag to display end: fewer = the 313-line field
 CAL_BN64  = 109     ; display end -> the first lock read: passes of 64 cycles ...
 CAL_BREM  = 0       ; ... and the rest
+
+; ---- loop 2 (gen_loop2.s): the window's gadgets and line blocks ----
+; The gadget's writes, from its first store (just after S): MODE 3 at +9 us, the
+; lead-in mode at +15, the variant entered at cycle 41 after S (its MODE 1 write at
+; +23+u); each line block takes BLK_LEN cycles, so that an iteration is 128.
+PAD_W1    = 0       ; after the 8-byte block, to the MODE 3 write
+PAD_W2    = 4       ; to the lead-in mode write
+PAD_W3    = 3       ; to the variant
+BLK_LEN   = 45      ; a line block, from its entry (VRET) to its tail
+CAL_ENT   = 41      ; the palette line's handover -> the first window line's tail (the phase)
+CAL_V20   = 23      ; the window's variant 0 (no lead-in): as long as the others, given
+                    ; this loop's 1 MHz alignment of their MODE 1 write
+BLD_IDLE  = 28      ; strip.s: pads the real path's column setup to the idle one's

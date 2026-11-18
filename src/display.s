@@ -97,17 +97,18 @@ setup_frame:
 	sta	VVECP
 	lda	VSPH_BY_X,x
 	sta	VVECP+1
-	lda	VS2_BY_X,x
-	sta	VVEC2
-	lda	VS2H_BY_X,x
-	sta	VVEC2+1
-	lda	VA_BY_X,x
+	lda	VS2_BY_X,x		; the window's variant (its set shares VX's page)
+	sta	VJ
+	lda	#>VX
+	sta	VJ+1
+	lda	VA_BY_X,x		; the blip
 	sta	va1+1
 	sta	vap+1
-	sta	va2+1
-	sta	va3+1
-	lda	VC_BY_X,x
+	sta	vav
+	lda	VC_BY_X,x		; the lead-in mode
 	sta	vcv
+	sta	vcA+1
+	sta	vcB+1
 	rts
 
 ; ---- rowaddr: A:Y <- &3000 + (576 * row + cb8) mod &5000 (Y high, ra low), row in

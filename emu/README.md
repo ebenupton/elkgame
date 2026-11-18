@@ -77,3 +77,5 @@ tests use:
 - `race N`: screen stores against the display's fetches of the same bytes.
 - `iolog N FILE`: the timing fingerprint (`test/fingerprint.sh`).
 - `dump PREFIX`: one field's picture, fetch addresses, modes and I/O.
+- `swatch ADDR N`: every store to one sideways RAM address over N fields, with its
+  raster position (for following a variable).
