@@ -25,9 +25,10 @@
 ; Interrupts are off.  A field is: the raster lock (two stalled main-RAM reads on lines
 ; 0 and 1), the lines above the window, the palette line, the 169 window iterations of
 ; 128 cycles each, then, below the window, variable-length work (keyboard, trajectory,
-; the vertical step) that must finish before display end (line 249), and fixed-length
-; work (the column step's edge rows, the strip for the next field, the next field's
-; display parameters) and a counted delay back to the lock (frame.s).
+; the vertical step's plan) that must finish before display end (line 249), and
+; fixed-length work (the vertical step's stores, the column step's edge rows, the strip
+; for the next field, the next field's display parameters) and a counted delay back to
+; the lock (frame.s).
 ;
 ; Build: make (see the Makefile for the options).  Generated files (tools/gen.py):
 ; config.inc, gen_tables.s, gen_variants.s, gen_snips.s.
@@ -40,12 +41,12 @@
 
 	.include "raster.s"		; the frame top, the scanline loop (with the generated window code)
 	.include "init.s"		; start-up, the first picture, the bootstrap raster sync
-	.include "frame.s"		; the work below the window and the delay to the next lock
 	.include "logic.s"		; the trajectory: script, random walk, keys
 	.include "notch.s"		; the vertical step: a quarter of a look-ahead row
 	.include "colop.s"		; a column step's edge rows
 	.include "strip.s"		; building the beam-raced strip for the next field
 	.include "display.s"		; the next field's screen start, lead-in and band
+	.include "frame.s"		; the work below the window and the delay to the next lock
 	.include "tables.s"		; generated and hand-written tables
 	.include "vars.s"		; variables (in the sideways RAM bank)
 	.include "kbd.s"		; the keyboard scan (main RAM)

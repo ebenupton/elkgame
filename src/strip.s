@@ -251,9 +251,8 @@ bld_cols:	lda	sxin+1			; the hash's block term
 	lda	HKBH,y
 	sta	armA2+2
 	sta	armB2+2
-	LDELAY	CAL_SPARE1		; the time this saves over the old builder, kept as
-	LDELAY	CAL_SPARE2		; a delay so that the lock read stays where it was
-	LDELAY	CAL_SPARE3		; (free for a game's fixed-length work)
+	LDELAY	CAL_SPARE		; spare time, kept as a delay so that the lock read
+					; stays where it is (free for a game's fixed-length work)
 	rts
 
 ; by 8 * parity (0: an even first row, gadget A first; 8: odd, B first)

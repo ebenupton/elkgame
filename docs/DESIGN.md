@@ -368,9 +368,10 @@ slots.
 - the first pair's bytes and the next pair's;
 - the entry tail, the first block, and the exit block.
 
-That takes about 950 cycles where the snippet builder took about 3,560. The 2,600
-cycles saved are currently kept as a delay (`CAL_SPARE*`), so the lock read stays
-where it was. They're free for a game's fixed-length work.
+That takes about 950 cycles where the snippet builder took about 3,560. Most of the
+2,600 cycles saved now go to the vertical step's stores (5.3). The rest, 440, are kept
+as a delay (`CAL_SPARE`), so the lock read stays where it was. They're free for a
+game's fixed-length work.
 
 **Commit timing.** The rule is **at most 2 columns a commit, commits at least 2 fields
 apart**, so a field is ahead, behind or idle, never two at once. Together with the
@@ -430,17 +431,45 @@ complete when k = 0.
 
 **One step, one class.** A 2-line step down makes exactly one (row, class) newly due:
 the row below the new last row, class k. A step up makes the row above the new first
-row due, class 3 − k. `vstep` draws exactly that (`group`): the class's cells across the
-row's 72-cell span, the window's cells as pattern and the gap's as zeros. That is
-about 18 cells, the same work every step.
+row due, class 3 − k. The step draws exactly that: the class's cells across the row's
+72-cell span, the window's cells as pattern and the gap's as zeros.
+
+**Plan, then store.** The drawing is split across the bottom of the frame (section 6)
+so that its stores, the expensive part, are fixed-length work:
+- `vstep`, in the variable part, moves `wy` and has `nprep` fill a **plan**: the
+  class's five blocks' addresses (`NBL`, `NBH`), and each of their twenty cells' three
+  bytes (`NTE` for lines 0, 2, 4 and 6, `NTO` for 1, 3 and 5, `NT7` for line 7). A
+  cell's bytes are its block's pattern ANDed with `NSPAN`, a mask by the span's kind
+  and the cell's column: $FF in the window's part of the span, else 0. About 1,400
+  cycles. With no step this field, `nnull` aims all five blocks at the dummy page.
+- `nstore`, the first thing after display end, writes the plan's twenty cells: five
+  blocks of four cells, eight stores a cell, the block's page patched into the stores.
+  About 2,120 cycles, the same every field, step or not. It has a page to itself
+  (segment NSTORE).
+
+**Every cell of the five blocks is written**, with no test per cell. The cells of the
+first and last blocks that fall outside the span (up to 3 before it, up to 8 after it)
+get zero. Along the tape, row r's cell c is row r+1's cell c − 72. So those cells are
+either:
+- the neighbouring window row's gap cells, which are always zero; or
+- cells of the row two away from the window, which nothing requires. A row's classes
+  are drawn one by one after it becomes the look-ahead row, before they are due.
+
+(At start-up, `first_picture` draws every class of 25 rows twice: first all as rows
+above, then all top-down as rows below. A row-above drawing zeroes three window cells
+of the row before, which the second pass redraws. A row-below drawing zeroes window
+cells of the row after, which it draws next.)
 
 **Free interactions.** A column step needs no bookkeeping: `colop` decides from the
 column's class and `wy` alone (5.2). Reversing leaves extra classes drawn, which is
 harmless: a class is drawn again whenever it becomes due.
 
-**Cost.** One class of a row is up to 20 characters, about 3,900 cycles with every
-main-RAM access a 1 MHz slot. Two do not fit beside everything else before display
-end, hence **at most 2 lines a field** (`DYMAX`).
+**Cost.** About 1,400 cycles of variable work in a field that steps (`nprep`), and
+2,120 of fixed work in every field (`nstore`). The stores cost more than the cycle
+count of their instructions: each is a main-RAM write, which waits for a 1 MHz slot.
+Before the split, the whole drawing was variable work, 3,300–4,100 cycles. There is
+one plan, so **at most 2 lines a field** (`DYMAX`, asserted). A second notch would need
+another 2,120 cycles of fixed work, which the bottom of the frame doesn't have.
 
 ### 5.4 Why 57 characters, and the one-column rule
 
@@ -469,12 +498,13 @@ cycles, in two parts.
 - the field parity; the schedule keys (comma, full stop);
 - the keyboard (`kbd.s`, from main RAM);
 - the trajectory (`logic.s`);
-- the vertical step (`vstep`).
+- the vertical step's plan (`vstep`, `nprep`; section 5.3).
 
 Then the program polls for display end, which the ULA flags at line 249 after a text
 mode. The poll absorbs all the variation, so this part needs no cycle counting.
 
 **Fixed length**, every path padded to the same time:
+- **The vertical step's stores** (`nstore`), the same in every field.
 - **The column step.** A commit, shown next field: `colop` for the ahead column, then
   `mx` and `wx` move. The behind field of a 2-column step: `colop` for its first
   column, hidden lines only, then `mx` moves. An idle field: an equivalent delay.
@@ -483,9 +513,8 @@ mode. The poll absorbs all the variation, so this part needs no cycle counting.
 - **A counted delay** (`frame_tail`) to the lock read: `CAL_N64` passes of 64 cycles,
   two more in the 313-line field, and `CAL_REM`.
 
-The fixed part is about 7,880 cycles from display end to `ula_apply`. About 2,600 of
-those are the builder's spare delay (`CAL_SPARE*`, section 5.1): real fixed work can
-replace them. The counted delay after it is at its minimum (`CAL_N64` = 1, `CAL_REM` =
+The fixed part is about 7,880 cycles from display end to `ula_apply`. Of those, 440
+are spare delay (`CAL_SPARE`, section 5.1): real fixed work can replace them. The counted delay after it is at its minimum (`CAL_N64` = 1, `CAL_REM` =
 10).
 
 **The commit pipeline.** `logic` chooses a commit (`hnew`) two fields ahead of its
@@ -498,8 +527,11 @@ display: hnew → cnext2 → cnext. A commit chosen in field N:
 the field once, from the RTC event's position relative to display end, and the
 parity (`fpar`) simply alternates after that.
 
-**Budget.** The variable part has about 6,200 cycles before display end. A vertical
-step takes up to about 3,900 of them; the trajectory and keyboard most of the rest.
+**Budget.** The variable part has about 6,200 cycles before display end. Measured on
+the six fingerprint trajectories, it uses 600–1,300 cycles in a field without a
+vertical step and 2,000–2,900 in one with a step. The plan's ~1,400 cycles plus the
+keyboard and trajectory leave about 3,300 for a game in the worst field. Before the
+split, a field with a step used 3,800–5,200.
 
 ---
 
@@ -560,10 +592,10 @@ The soak reports the lock read (the first of the two) at h 312–616 of line 0, 
 | `elkscroll.s` | – | the root: includes everything in the order that fixes the layout |
 | `raster.s` | DLOOP, ENTRY, LOOP (+ LOOP2, VARIANTS, SNIPS) | the lock, loop 1, the palette line; includes the window's generated code |
 | `gen_loop2.s` (generated) | LOOP2, TABLES3 | the window: gadgets gA/gB and the sixteen line blocks |
-| `init.s` | CODE, TAILS | start-up, the first picture, `boot_sync` |
+| `init.s` | VCODE, TAILS | start-up, `first_picture`, `boot_sync` |
 | `frame.s` | CODE, TAILS | the bottom of the frame, `frame_tail` |
-| `logic.s` | CODE | the trajectory and keys |
-| `notch.s` | CODE | `vstep`, `group`, the cell writers `putc` and `pcl` |
+| `logic.s` | VCODE | the trajectory and keys |
+| `notch.s` | VCODE, NSTORE | `vstep`, `nprep`, `nnull` (the plan); `nstore` (the stores) |
 | `colop.s` | CODE | the edge rows |
 | `strip.s` | CODE, TABLES4 | `build`: the strip's first two rows and per-field state |
 | `display.s` | CODE | `setup_frame`, `ula_apply`, `rowaddr`, `addrow` |
@@ -572,7 +604,11 @@ The soak reports the lock read (the first of the two) at h 312–616 of line 0, 
 | `kbd.s` | KBDCODE (main RAM, &0900) | the keyboard scan |
 | `loader.s` | LOADER (&2000) | finds a sideways RAM bank, copies, starts |
 
-Memory: the sideways RAM image fills &8000–&AA8A of the bank (about 10.7K of 16K). Main RAM holds the
+CODE holds only fixed-length work, in an order (colop, strip, display, frame) where no
+branch on a fixed path crosses a page (`tools/pagecheck.py`). VCODE holds the
+variable-length work, where crossings don't matter.
+
+Memory: the sideways RAM image fills &8000–&ACC7 of the bank (about 11.2K of 16K). Main RAM holds the
 screen ring (&3000–&7FFF), the dummy page (&2400), the keyboard routine (&0900) and
 its result (&0A00–&0A02), and the stack.
 
@@ -595,7 +631,7 @@ The display engine is complete. The test pattern stands in for a game's map. To 
 it into the Electron counterpart of beebgame, a game would replace or add:
 
 - **Map data.** The pattern tables (`PERM`, `PE`, `PO` and their use in `build`,
-  `colop`, `group` and the line blocks' data slices) become tile lookups: each fills a
+  `colop`, `nprep` and the line blocks' data slices) become tile lookups: each fills a
   cell's eight bytes, or the next line's entering byte, from the map, in the same fixed
   time.
 - **Sprites.** The engine is single-buffered, so a sprite is drawn into the ring and
@@ -604,14 +640,15 @@ it into the Electron counterpart of beebgame, a game would replace or add:
     overwrites those cells as the beam passes. Draw sprites after the commit field's
     window, or keep them a column inside the edges.
   - The variable-length part before display end is where game logic and sprite work
-    fit: about 6,200 cycles less the vertical step.
+    fit: about 6,200 cycles less the vertical step's plan and the trajectory, about
+    3,300 in the worst field (section 6).
 - **Speed.** As it stands the engine holds the CPU from line 0 to line 200 for the
   scanline loop. A game would run its logic in the bottom of the frame, or at a lower
   frame rate. An experimental port of Cleo onto an earlier version of this engine ran
   its game logic at 6–8 frames a second this way.
 - **Integration points.**
   - The line blocks have spare cycles (each is `BLK_LEN` long and does up to about
-    40), and the bottom of the frame has about 2,600 (`CAL_SPARE*`). X must keep the
+    40), and the bottom of the frame has 440 (`CAL_SPARE`). X must keep the
     blip value through the window.
   - Everything from the blip to the variant's write must stay exactly as listed in
     section 3.2.
@@ -658,7 +695,7 @@ MODE 1/5 show those four, and MODE 0/3/4/6 and mode value 7 show 0 and 8. Hence:
 | &FE0A–&FE0F | &FF | the MODE 2 palette |
 
 `setup_frame` patches the above-window values separately in both builds. That costs 12
-cycles, taken back from `CAL_SPARE3`. A MODE 1 build's timing is identical to that
+cycles, taken back from the spare delay (`CAL_SPARE`). A MODE 1 build's timing is identical to that
 before MODE 2 was added: every write, the fixed work and the lock read, on six
 fingerprinted trajectories.
 

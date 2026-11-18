@@ -78,27 +78,27 @@ pmask:	.res	1			; $77 on a block's first column (its black pixel), else $FF
 fdn:	.res	1			; (init: rows left to draw)
 
 ; ---- the vertical step (notch.s) ----
-vcnt:	.res	1			; 2-line steps left this field
 grow:	.res	2			; the row being drawn (0..319); also colop's
 gcls:	.res	1			; its class (0..3)
 gkind:	.res	1			; 0: drawn as the row above the window, 1: as the row below
 gb:	.res	2			; the current block (map column / 4)
-grel:	.res	1			; the current cell's column relative to the span, + 3
-gzlo:	.res	1			; the span's pattern columns: grel in gzlo..gzhi-1
-gzhi:	.res	1
-gplo:	.res	1			; a whole block of pattern: gplo <= grel < gphi
-gphi:	.res	1
-gz0:	.res	1			; a whole block of zeros: gz0 <= grel < gz1
-gz1:	.res	1
-gsw:	.res	1			; the fast block's cell after which the plain values apply
-gbc:	.res	1			; blocks left
-gcc:	.res	1			; cells left in the block (slow path)
+grel:	.res	1			; the first cell's NSPAN index
+gbc:	.res	1			; the block (nstore: 0..4)
 ve:	.res	1			; the block's even- and odd-line bytes ...
 vo:	.res	1
 vem:	.res	1			; ... and with its left pixel black
 vom:	.res	1
 
-; ---- the cell writers (putc, PUTCC, PUTCM) ----
+; ---- the vertical step's plan: nprep writes it, nstore stores it ----
+NBL:	.res	5			; the five blocks' addresses
+NBH:	.res	5
+NTE:	.res	20			; the twenty cells' bytes: lines 0, 2, 4, 6
+NTO:	.res	20			; lines 1, 3, 5
+NT7:	.res	20			; line 7
+	NOCROSS	NBL, 10
+	NOCROSS	NTE, 60
+
+; ---- the cell writers (PUTCC, PUTCM) ----
 plo:	.res	1			; the cell's address
 phi:	.res	1
 pve:	.res	1			; lines 0, 2, 4, 6

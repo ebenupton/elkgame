@@ -16,7 +16,7 @@
 ; The engine's rules, enforced here: commits move at most 2 columns and are at least
 ; 2 fields apart (no commit while one is in the pipeline); dy is at most DYMAX = 2
 ; lines a field (one notch class of a look-ahead row).
-	.segment "CODE"
+	.segment "VCODE"
 logic:	dec	segl
 	bne	@keep
 	.if	TRAJ = 0

@@ -3,9 +3,10 @@
 ;
 ; Entered from the window's exit block (VX) at line 200.  In order:
 ;   variable length (must end before line 249, display end in a text mode):
-;     the keys and the schedule switch, the trajectory (logic.s), the vertical step
-;     (notch.s); then a poll for display end, which absorbs the variation;
+;     the keys and the schedule switch, the trajectory (logic.s), the vertical step's
+;     plan (notch.s: vstep); then a poll for display end, which absorbs the variation;
 ;   fixed length (calibrated in cal.inc, every path padded to the same time):
+;     the vertical step's stores (notch.s: nstore, 1,657 cycles, a step or not);
 ;     the column step's edge rows (colop.s) -- for a commit, for the behind field of a
 ;     2-column step, or a pad for an idle field; the strip for the next field
 ;     (strip.s); the next field's display parameters (display.s); and a counted delay
@@ -42,6 +43,7 @@ wk_de:	lda	ULA_STAT
 	beq	wk_de
 	; ---- fixed length from here to the lock: every path padded to the same time ----
 	bit	ULA_STAT
+	jsr	nstore			; the vertical step's stores (or the dummy page's)
 	lda	cnext
 	beq	wk_noc
 	; a commit (shown next field): the ahead column's edge rows now; the strip will

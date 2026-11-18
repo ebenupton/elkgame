@@ -84,7 +84,7 @@ sreal:	PADN	14
 sdone:
 	.endmacro
 
-; PUTCC p: the cell at (plo, phi) <- pve, pvo, pv7 (as putc), in line, fixed time
+; PUTCC p: the cell at (plo, phi) <- pve (lines 0, 2, 4, 6), pvo (1, 3, 5), pv7 (7), in line, fixed time
 	.macro	PUTCC	p
 	lda	phi
 	.repeat	8, i

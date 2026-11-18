@@ -56,12 +56,13 @@ def screen_starts(fs):
 def main(a, b):
     fa, fb = fields(a), fields(b)
     sa, sb = screen_starts(fa), screen_starts(fb)
-    n = min(len(fa), len(fb))
-    off = max(range(-5, 6), key=lambda o: sum(1 for k in range(10, n - 10) if sa[k] == sb[k + o]))
+    W = 20                         # the alignment's search range, fields
+    n = min(len(fa), len(fb)) - W
+    off = max(range(-W, W + 1), key=lambda o: sum(1 for k in range(W + 10, n) if sa[k] == sb[k + o]))
     print(f'aligned with an offset of {off} field(s)')
     bad = 0
     dfix, dlock = collections.Counter(), collections.Counter()
-    for k in range(10, n - 10):    # (the first fields are the start-up's)
+    for k in range(W + 10, n):     # (the first fields are the start-up's)
         pa, xa, la = summary(fa[k])
         pb, xb, lb = summary(fb[k + off])
         if pa != pb:
@@ -72,7 +73,7 @@ def main(a, b):
             dfix[xb - xa] += 1
         if la is not None and lb is not None:
             dlock[lb - la] += 1
-    print(f'{n - 20} fields: picture writes differ in {bad}')
+    print(f'{n - W - 10} fields: picture writes differ in {bad}')
     print('fixed work, new - old (cycles: fields):', ' '.join(f'{d:+d}:{c}' for d, c in sorted(dfix.items())))
     print('lock read, new - old (cycles: fields): ', ' '.join(f'{d:+d}:{c}' for d, c in sorted(dlock.items())))
     return 1 if bad else 0

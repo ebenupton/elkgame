@@ -20,9 +20,9 @@ CAL_NOC1  = 1200    ; an idle field, in place of the edge rows (four LDELAYs)
 CAL_NOC2  = 1200
 CAL_NOC3  = 1200
 CAL_NOC   = 248
-CAL_SPARE1 = 1000   ; strip.s: the builder's saving, given back as delay (2,604 cycles)
-CAL_SPARE2 = 1000
-CAL_SPARE3 = 562    ; (12 fewer: setup_frame's tables for the lines above the window)
+CAL_SPARE = 440     ; strip.s: the fixed work's spare time, as delay: the builder's saving
+                    ; (2,604 cycles), less 12 for setup_frame's tables for the lines above
+                    ; the window and 1,657 for the vertical step's stores (nstore); at most 1,296
 
 ; ---- the delay to the next lock (frame_tail): CAL_N64 (+2 in the 313-line field)
 ; passes of 64 cycles and CAL_REM, after the fixed work ----

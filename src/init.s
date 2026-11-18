@@ -27,7 +27,8 @@ DYMAX = 2			; lines a field, at most (one notch class a field)
 
 ; ---- start-up ---------------------------------------------------------------------------
 ; Entered from the loader with A = this bank.  Interrupts stay off from here on.
-	.segment "CODE"
+; Variable length (VCODE), like the first picture.
+	.segment "VCODE"
 
 init:	sei
 	sta	bank
@@ -101,10 +102,24 @@ init:	sei
 	sta	segl
 	sta	vdiv
 	sta	svd
-	; the first picture: all four notch classes of the 25 rows from top-1, each drawn
-	; as a row above the window and as a row below (so each row's gap cells on both
-	; sides are zero)
-	lda	wy
+	jsr	first_picture
+	jsr	build
+	jsr	setup_frame
+	jsr	ula_apply
+	jmp	boot_sync
+
+; ---- first_picture: the window and its look-ahead rows, drawn at start-up ----------
+	.segment "VCODE"
+first_picture:
+	; the first picture: all four notch classes of the 25 rows from top-1, drawn as
+	; rows above the window (pass gkind 0), then, top down, as rows below (gkind 1),
+	; so that each row's gap cells on both sides are zero.  A drawing also zeroes a
+	; few cells past each end of its span (notch.s): as a row above, window cells of
+	; the row before, which the second pass redraws; as a row below, window cells of
+	; the row after, which it draws next.
+	lda	#0
+	sta	gkind
+fpass:	lda	wy
 	sec
 	sbc	#8
 	sta	tmp
@@ -116,16 +131,11 @@ init:	sei
 	jsr	row_of_tmp		; grow = top - 1
 	lda	#25
 	sta	fdn
-@fr:	lda	#3
+ffr:	lda	#3
 	sta	gcls
-@fc:	lda	#0
-	sta	gkind
-	jsr	group
-	lda	#1
-	sta	gkind
-	jsr	group
+ffc:	jsr	ndraw
 	dec	gcls
-	bpl	@fc
+	bpl	ffc
 	inc	grow			; next row, mod 320
 	bne	:+
 	inc	grow+1
@@ -138,11 +148,14 @@ init:	sei
 	sta	grow
 	sta	grow+1
 :	dec	fdn
-	bne	@fr
-	jsr	build
-	jsr	setup_frame
-	jsr	ula_apply
-	jmp	boot_sync
+	bne	ffr
+	inc	gkind
+	lda	gkind
+	cmp	#2
+	bne	fpass
+	lda	#0
+	sta	gch
+	rts
 
 ; ---- bootstrap: find the field and the bottom of the frame ----------------------------
 ; The PAL fields alternate 312 and 313 lines.  Wait for the RTC flag (line 99, at its
