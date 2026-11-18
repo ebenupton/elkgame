@@ -91,12 +91,14 @@ void hexdump(const uint8_t *base, unsigned addr, unsigned len) {
 unsigned hex(const std::string &s) { return unsigned(std::strtoul(s.c_str(), nullptr, 16)); }
 
 // The scroll demo's pattern, as tools/gen.py's pixel(): a 3-bit RGB colour for map
-// pixel (mx, my).  The model file holds Y0, H, WIN_C, WIN_W, then PERM, PE, PO.
+// pixel (mx, my), in the window mode's pixels.  The model file holds Y0, H, WIN_C,
+// WIN_W, PERM, PE, PO, then the window's mode (1 or 2) and the MODE 2 palette (16
+// logical colours as the emulator's pixels).
 struct Model {
-	int y0 = 0, h = 0, win_c = 0, win_w = 0;
-	uint8_t perm[256], pe[256], po[256];
+	int y0 = 0, h = 0, win_c = 0, win_w = 0, mode = 1;
+	uint8_t perm[256], pe[256], po[256], pal[16];
 	bool load(const std::string &path) {
-		std::vector<uint8_t> b(4 + 3 * 256);
+		std::vector<uint8_t> b(4 + 3 * 256 + 17);
 		FILE *f = std::fopen(path.c_str(), "rb");
 		if(!f) return false;
 		const bool ok = std::fread(b.data(), 1, b.size(), f) == b.size();
@@ -104,13 +106,23 @@ struct Model {
 		if(!ok) return false;
 		y0 = b[0]; h = b[1]; win_c = b[2]; win_w = b[3];
 		std::copy_n(&b[4], 256, perm); std::copy_n(&b[260], 256, pe); std::copy_n(&b[516], 256, po);
-		return true;
+		mode = b[772];
+		std::copy_n(&b[773], 16, pal);
+		return mode == 1 || mode == 2;
 	}
+	int ppc() const { return mode == 2 ? 2 : 4; }		// pixels a character (a byte)
 	int colour(int mx, int my) const {
-		static const uint8_t rgb[4] = {0, 3, 5, 6};		// black, cyan, magenta, yellow
-		if((mx & 15) == 0 || (my & 15) == 15) return 0;
-		const int v = (perm[(mx >> 4) & 255] + ((my >> 4) & 255)) & 255;
+		static const uint8_t rgb[4] = {0, 3, 5, 6};		// MODE 1: black, cyan, magenta, yellow
+		const int bw = 4 * ppc();				// a block: four characters
+		if((mx % bw) == 0 || (my & 15) == 15) return 0;
+		const int v = (perm[(mx / bw) & 255] + ((my >> 4) & 255)) & 255;
 		const uint8_t b = (my & 1) ? po[v] : pe[v];
+		if(mode == 2) {
+			const int s = (mx & 1) ? 0 : 1;
+			int l = 0;
+			for(int k = 0; k < 4; k++) l |= ((b >> (2 * k + s)) & 1) << k;
+			return pal[l];
+		}
 		const int p = mx & 3;
 		return rgb[((b >> (7 - p)) & 1) << 1 | ((b >> (3 - p)) & 1)];
 	}
@@ -138,7 +150,8 @@ int soak(elk::Machine &m, int nf, const std::string &model_path, const std::stri
 			const bool in_rows = y >= Y0 && y < Y1;
 			for(int x = 0; x < 640; x++) {
 				if(in_rows && x >= x0 && x < x1) {
-					if(c.pix[y][x] != model.colour((pwx * 4 + ((x - x0) >> 1)) % 10240, (pwy + y - Y0) % 2560)) bad++;
+					const int ppc = model.ppc(), sh = ppc == 2 ? 2 : 1;	// capture units a pixel: 2 or 4
+					if(c.pix[y][x] != model.colour((pwx * ppc + ((x - x0) >> sh)) % (2560 * ppc), (pwy + y - Y0) % 2560)) bad++;
 				} else if(c.pix[y][x]) outside++;
 			}
 		}

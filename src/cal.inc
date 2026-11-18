@@ -22,7 +22,7 @@ CAL_NOC3  = 1200
 CAL_NOC   = 248
 CAL_SPARE1 = 1000   ; strip.s: the builder's saving, given back as delay (2,604 cycles)
 CAL_SPARE2 = 1000
-CAL_SPARE3 = 574
+CAL_SPARE3 = 562    ; (12 fewer: setup_frame's tables for the lines above the window)
 
 ; ---- the delay to the next lock (frame_tail): CAL_N64 (+2 in the 313-line field)
 ; passes of 64 cycles and CAL_REM, after the fixed work ----

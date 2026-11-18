@@ -152,6 +152,18 @@ init:	sei
 ; From then on the field parity (fpar) simply alternates.
 	.segment "TAILS"		; (the delay loops of TAILS must not cross a page)
 boot_sync:
+	lda	#PALA			; the six palette registers only MODE 2 reads: set once
+	sta	ULA_PAL8+2		; (here, in TAILS, so as not to move CODE: DESIGN.md 10)
+	lda	#PALB
+	sta	ULA_PAL8+3
+	lda	#PALC
+	sta	ULA_PAL8+4
+	lda	#PALD
+	sta	ULA_PAL8+5
+	lda	#PALE
+	sta	ULA_PAL8+6
+	lda	#PALF
+	sta	ULA_PAL8+7
 	lda	#M1			; a graphics mode at line 255: display end fires
 	sta	ULA_MODE
 	lda	bank

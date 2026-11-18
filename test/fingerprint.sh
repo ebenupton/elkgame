@@ -8,14 +8,15 @@
 # field, line, h (1/16 us), R or W, register, value -- to OUT.  Every mode and palette write the
 # engine makes is at a cycle-exact raster position, so two builds with identical
 # fingerprints over a range of trajectories place every write identically: use it to
-# check that a change is timing-neutral (diff the two files).
+# check that a change is timing-neutral (diff the two files).  SCRMODE=2 in the
+# environment fingerprints the MODE 2 window.
 set -u
 OUT=$1 WX=$2 WY=$3 SEED=$4 TRAJ=$5 MODEL=$6 FIELDS=$7
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ROMS=${ELK_ROMS:-$ROOT/roms}
 B=$ROOT/build/fp/$(basename "$OUT")
 if [ "$MODEL" = real ]; then PRE="realula 1" S=8; else PRE="" S=0; fi
-make -s -C "$ROOT" BUILD="$B" START_WX="$WX" START_WY="$WY" SEED="$SEED" TRAJ="$TRAJ" MOTION=1 SCHED=$S "$B/elkscroll" >/dev/null 2>&1 \
+make -s -C "$ROOT" BUILD="$B" START_WX="$WX" START_WY="$WY" SEED="$SEED" TRAJ="$TRAJ" MOTION=1 SCHED=$S SCRMODE="${SCRMODE:-1}" "$B/elkscroll" >/dev/null 2>&1 \
 	|| { echo "fingerprint: build failed" >&2; exit 1; }
 rm -f "$OUT"
 "$ROOT/build-emu/elkh" --rompath "$ROMS" $PRE boot 2.5 load "$B/elkscroll" 2000 type 'CALL &2000\n' boot 2 \

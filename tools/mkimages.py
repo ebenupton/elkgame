@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Disc and tape images of the scroll demo.
 
-    python3 tools/mkimages.py BINARY OUTDIR
+    python3 tools/mkimages.py BINARY OUTDIR [NAME]
 
-Writes OUTDIR/elkscroll.ssd, a DFS disc (80 tracks, single-sided) whose !BOOT *RUNs
-ELKSCRL, with boot option 3 so that SHIFT+BREAK starts it (a Plus 3 with a DFS, MMFS on
-an ElkSD, a Gotek, ...), and OUTDIR/elkscroll.uef, the same program on tape (*RUN or
-CHAIN"" and PLAY).  The program loads and runs at &2000."""
+Writes OUTDIR/NAME.ssd, a DFS disc (80 tracks, single-sided) whose !BOOT *RUNs the
+program, with boot option 3 so that SHIFT+BREAK starts it (a Plus 3 with a DFS, MMFS on
+an ElkSD, a Gotek, ...), and OUTDIR/NAME.uef, the same program on tape (*RUN or
+CHAIN"" and PLAY).  The program loads and runs at &2000.  NAME is elkscroll (the
+default: file ELKSCRL, title "ELK SCROLL") or elkscroll2 (the MODE 2 demo: ELKSCR2,
+"ELK SCROLL 2")."""
 import os
 import struct
 import sys
 
+IMAGES = {'elkscroll': ('ELKSCRL', 'ELK SCROLL'), 'elkscroll2': ('ELKSCR2', 'ELK SCROLL 2')}
 NAME = 'ELKSCRL'
 LOAD = EXEC = 0x2000
 
@@ -85,13 +88,17 @@ def uef(data):
     return bytes(out)
 
 
-def main(binary, outdir):
+def main(binary, outdir, image='elkscroll'):
+    global NAME
+    NAME, title = IMAGES[image]
     data = open(binary, 'rb').read()
     os.makedirs(outdir, exist_ok=True)
-    open(os.path.join(outdir, 'elkscroll.ssd'), 'wb').write(ssd(data))
-    open(os.path.join(outdir, 'elkscroll.uef'), 'wb').write(uef(data))
-    print(f'{len(data)} bytes -> elkscroll.ssd, elkscroll.uef')
+    open(os.path.join(outdir, image + '.ssd'), 'wb').write(ssd(data, title))
+    open(os.path.join(outdir, image + '.uef'), 'wb').write(uef(data))
+    print(f'{len(data)} bytes -> {image}.ssd, {image}.uef')
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2])
+    if len(sys.argv) not in (3, 4):
+        sys.exit(__doc__)
+    main(*sys.argv[1:])

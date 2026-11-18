@@ -4,7 +4,8 @@ This document explains how the demo puts a 228 × 170-pixel MODE 1 window on an 
 Electron and scrolls it at 50 Hz. It covers the display tricks first (sections 2–4),
 then how the picture is kept up to date as it moves (5), then the frame's timetable
 (6) and the timing discipline that holds it together (7). Section 9 says what a game
-built on the engine would add.
+built on the engine would add, and section 10 how the same engine shows a 114 × 170
+MODE 2 window.
 
 The ULA behaviour everything depends on is set out, with sources, in
 [`ULA-NOTES.md`](ULA-NOTES.md), and the evidence that it works is in
@@ -584,6 +585,7 @@ Build options (`make NAME=VALUE`; defaults in init.s):
 | `SEED` | &ACE1 | the random walk's seed |
 | `MOTION` | 0 | 1: moving from the start (else SPACE starts it) |
 | `SCHED` | 8 | the schedule at start: 8 real ULA, 0 FPGA |
+| `SCRMODE` | 1 | the window's screen mode: 1 or 2 (section 10; `gen.py`, not the assembler) |
 
 ---
 
@@ -613,3 +615,64 @@ it into the Electron counterpart of beebgame, a game would replace or add:
     blip value through the window.
   - Everything from the blip to the variant's write must stay exactly as listed in
     section 3.2.
+
+---
+
+## 10. The MODE 2 window (`SCRMODE=2`)
+
+The same engine shows a **114 × 170-pixel MODE 2 window**, with the same memory layout,
+timing and scrolling. It has sixteen logical colours, eight of them distinct on
+screen. MODE 0, 1 and 2 fetch identically: 80 bytes a line, one every half
+microsecond. So the ring, the lead-in, the blip, the strip and the notch all work on
+bytes, unchanged:
+- a character is still 8 bytes, now 2 pixels wide;
+- a column step is 2 MODE 2 pixels;
+- a pattern block (4 characters by 16 lines) is 8 × 16 pixels.
+
+`gen.py` generates either build (`SCRMODE` in the environment; `make one SCRMODE=2`).
+The assembly has no conditional code: the two builds differ only in generated values.
+
+**The palette.** The register pairs are independent: pair (&FE08+2i, &FE09+2i) holds
+logical colours base_i | {0, 2, 8, 10}, base = 0, 4, 5, 1 (`ULA-NOTES.md` section 9).
+Every mode except MODE 2 shows only colours 0, 2, 8 and 10, which &FE08/&FE09 hold:
+MODE 1/5 show those four, and MODE 0/3/4/6 and mode value 7 show 0 and 8. Hence:
+
+- &FE0A–&FE0F are written once, in `boot_sync`, and never change. They're &FF in a
+  MODE 1 build. They're written there rather than in `init`, so as not to move `CODE`
+  (section 7: no fixed-path branch may cross a page).
+- The palette line and the exit (VX) black out the window with &FE08/&FE09 exactly as
+  in MODE 1.
+- **Only the window's lines are MODE 2.** The lines above it stay MODE 1. They show the
+  look-ahead rows and the band, which are not black, and a MODE 2 line would show them
+  through the six fixed registers.
+
+**What the mode changes.**
+
+| | MODE 1 build | MODE 2 build |
+|---|---|---|
+| the window's mode `MW`: the gadgets' and the palette line's MODE 1 write | M1 | M2 |
+| the lead-in mode in the window (`VC_BY_X`: the gadgets, the palette line's `sty`) | M7 / M1 | M7 / M2 |
+| the blip in the window (`VA_BY_X`, X in loop 2) | M5 / M1 | M5 / M2 |
+| above the window: the lead-in mode (`VC1_BY_X` into `DSNV`) and the blip (`VA1_BY_X` into `va1`, `vap`) | the same values | MODE 1's |
+| the block's black left pixel (`LMASK`: `PMASK`, `PEM`, `POM`) | &77 | &55 |
+| &FE0A–&FE0F | &FF | the MODE 2 palette |
+
+`setup_frame` patches the above-window values separately in both builds. That costs 12
+cycles, taken back from `CAL_SPARE3`. A MODE 1 build's timing is identical to that
+before MODE 2 was added: every write, the fixed work and the lock read, on six
+fingerprinted trajectories.
+
+**The test card: the Amstrad CPC's palette.** The CPC's 27 colours have each of red,
+green and blue off, half or full. Each is the average of two of the Electron's eight
+colours:
+- A has every component that is at least half on;
+- B has every component that is full.
+
+A block is A and B in a 1 × 2 dither: the pair alternates along each line and swaps on
+the next. That's exactly the even-line and odd-line bytes the engine already carries
+per colour pair (`VE`, `VO`), so the strip's data path is unchanged. The 26 colours
+other than black are used, so the grid stays visible. Each colour of a pair appears
+under one of its two logical names: logical L shows colour L, or 15 − L above 7. So
+the picture uses every palette register. `model.bin` carries the mode and the palette
+for elkh's checker.
+

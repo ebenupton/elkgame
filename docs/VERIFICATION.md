@@ -21,7 +21,8 @@ All checks run on Clock Signal's Electron core, from the fork in `emu/clk`
 
 ## 2. What a soak checks
 
-`test/soak.sh` runs `test/soak1.sh` over a deterministic set of cases:
+`test/soak.sh` runs `test/soak1.sh` over a deterministic set of cases, in both window
+modes (`-s` picks one):
 - start positions and random-walk seeds spread over the map, including its seams;
 - the demo script every seventh run;
 - the real-ULA model and schedule on odd runs, the FPGA model and schedule on even
@@ -98,6 +99,7 @@ not been simulated on the HDL.**
 | 3, balanced helpers (soak) | as above | soak: 40 runs × 100,000 fields = 4 million fields (cases 101–140; 20 runs on each ULA model, 6 following the script), all clean: 0 wrong, 0 unlocked, 0 late, 0 pad, 0 blip, 0 stray stores, the same 634 sideways RAM addresses written in every run; variable work ended by line 242 at worst; lock read at h 360–648 of line 0 |
 | 4, smaller | dead tables, `RTCLOG` and `VBUF` removed; timed segments packed; the snippet builder rolled up (about 4K smaller) | fingerprints: picture writes identical, lock read in the same place, at every step; soak: 24 runs × 50,000 fields, all clean |
 | 5, line blocks | the window loop rebuilt: two gadgets with absolute stores and sixteen line blocks that prepare the next row in the visible part; the strip builder 3,554 → ~950 cycles | the lead-in mode write moves from +17 to +15 µs (the phase model's coverage is unchanged, S 648–663); otherwise every write where the old loop put it, the fixed work and the lock read within 2 cycles of the original's (six fingerprinted trajectories). Soak: 16 runs × 50,000 fields = 800,000, both ULA models, all clean; variable work ended by line 242 at worst; lock read at h 344–664 |
+| 6, MODE 2 | the window's screen mode a build option (`SCRMODE=2`: 114 × 170 pixels, sixteen colours, the CPC-palette test card); both demos built by default | MODE 1: timing identical to the build before (six fingerprints: every write, the fixed work and the lock read, in every field). Negative control: the MODE 2 program against the MODE 1 model fails 200 of 200 fields. Soak: 16 runs × 50,000 fields = 800,000, four runs each of MODE 1 and MODE 2 on each ULA model, all clean; lock read at h 344–664 |
 
 To run the soak yourself: `make emu`, put the ROMs in `roms/`, then
 `test/soak.sh -n 100000 -r 40`. With eight runs at once a run of 100,000 fields takes

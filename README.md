@@ -1,25 +1,34 @@
 # elkgame
 
 A large, smoothly scrolling playfield for the **Acorn Electron**, in 6502 assembler: a
-**228 × 170-pixel MODE 1 window** (57 characters × 170 scanlines) that scrolls in
-both directions at **50 frames a second**, a character (4 pixels) at a time across
-and two scanlines at a time down, on an Electron with **one bank of sideways RAM**.
+window 57 characters × 170 scanlines -- **228 × 170 pixels in MODE 1** (four colours)
+or **114 × 170 in MODE 2** (sixteen) -- that scrolls in both directions at **50 frames
+a second**, a character at a time across and two scanlines at a time down, on an
+Electron with **one bank of sideways RAM**.
 The Electron has no hardware scrolling finer than a character row and no raster
 interrupts; everything here is done by timing writes to the ULA to the microsecond,
 with interrupts off.
 
 It is the start of an Electron counterpart to
 [beebgame](https://github.com/ebenupton/beebgame), the BBC Micro game engine: today it
-is the display engine and a test pattern -- a hash of 16 × 16-pixel blocks in the 35
-dithered colours of a black-cyan-magenta-yellow palette, each with a black grid line
-along its left and bottom edges, so that a misplaced line or character breaks the grid
-at once -- driven by a demo script, a random walk or the keys.
+is the display engine and a test card for each mode, driven by a demo script, a random
+walk or the keys.  The test cards are a hash of blocks four characters by sixteen lines,
+each with a black grid line along its left and bottom edges, so that a misplaced line
+or character breaks the grid at once:
 
-![the demo](docs/demo.png)
+| MODE 1: the 35 dithers of black, cyan, magenta and yellow | MODE 2: the Amstrad CPC's palette, as 1 × 2 dithers |
+|---|---|
+| ![MODE 1](docs/demo-mode1.png) | ![MODE 2](docs/demo-mode2.png) |
+
+In MODE 2 each of the CPC's 26 non-black colours (red, green and blue each off, half or
+full) is a pair of the Electron's eight, alternating pixel by pixel and swapping line by
+line: the average of the pair is the CPC colour.
 
 ## Running it
 
-`make` builds `build/elkscroll.ssd` and `build/elkscroll.uef`.
+`make` builds both demos: `build/elkscroll.ssd` and `.uef` (MODE 1), and
+`build/mode2/elkscroll2.ssd` and `.uef` (MODE 2).  The window's mode is a build option
+(`make one SCRMODE=2`); the engine is the same.
 
 - **Disc** (`.ssd`, boot option 3): SHIFT+BREAK on an Electron with a DFS -- a Plus 3
   with a DFS ROM, an ElkSD with MMFS, a Gotek, ...
@@ -48,7 +57,8 @@ as `elkview` (a window) and `elkh` (headless, for the tests):
 ```sh
 git submodule update --init      # emu/clk: the CLK fork
 make emu                         # build-emu/elkh, build-emu/elkview (needs cmake, SDL2 for the viewer)
-make run                         # the demo in elkview, real-ULA model
+make run                         # the MODE 1 demo in elkview, real-ULA model
+make run2                        # the MODE 2 demo
 ```
 
 The emulator needs the Electron's ROM images, which are not included: `os.rom` (the
@@ -70,14 +80,15 @@ the probe discs it was derived from have.
 ## Building
 
 Needs `python3`, and `ca65`/`ld65` from [cc65](https://cc65.github.io).  `make`
-builds; options set the start position, the trajectory and so on (see the Makefile:
-`make START_WX=100 TRAJ=1 SEED=7`).  For the emulator: cmake 3.19+, a C++20
+builds both demos; `make one` builds one, and options set the window's mode, the start
+position, the trajectory and so on (see the Makefile: `make one SCRMODE=2 START_WX=100
+TRAJ=1 SEED=7`).  For the emulator: cmake 3.19+, a C++20
 compiler, zlib and, for `elkview`, SDL2.
 
 ```sh
 make            # build/elkscroll.ssd, .uef
 make emu        # the emulator harness
-make test       # a short soak of both ULA models (test/soak.sh: -n fields, -r runs, -j jobs)
+make test       # a short soak: both ULA models, both window modes (test/soak.sh: -n fields, -r runs, -s mode)
 ```
 
 ## Layout

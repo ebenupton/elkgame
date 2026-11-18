@@ -56,7 +56,7 @@ COFFD:	.byte	2, 8			; the lower run's first offset ...
 CRUN2:	.byte	2, 3			; ... and its first row's number
 CSKIP:	.byte	4, 0			; the row with no entering cell
 CTOP:	.byte	1, 2			; the window's top row
-PMASK:	.byte	$77, $FF, $FF, $FF	; column & 3 -> the block's left pixel column black
+PMASK:	.byte	LMASK, $FF, $FF, $FF	; column & 3 -> the block's left pixel black
 	NOCROSS	XINL, PMASK+4-XINL
 
 ; ---- the variable-length work (no alignment needed) ----

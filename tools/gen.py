@@ -12,6 +12,8 @@ writes, into OUTDIR:
     gen_loop2.s     the window: two gadgets and sixteen line blocks (segment LOOP2)
     model.bin       the pattern for the emulator's in-process checker (emu/elkh soak)
 
+SCRMODE=2 in the environment generates the MODE 2 window (DESIGN.md section 10).
+
 Everything here is a pure function of the constants below: the build is deterministic.
 docs/DESIGN.md explains the engine; the references below (section numbers) are to it.
 
@@ -49,9 +51,19 @@ RING = 0x5000      # the 20K screen ring the ULA wraps (&3000-&7FFF)
 ROWB = 576         # bytes in a ring row: 72 characters
 
 # ---- the ULA's mode register values (&FE07; comms off, LED and motor off) ----------
-M1, M3, M5, M6 = 0x08, 0x18, 0x28, 0x30
+M1, M2, M3, M5, M6 = 0x08, 0x10, 0x18, 0x28, 0x30
 M7 = 0x38          # mode value 7: fetches like MODE 4 (40 columns), but the real ULA
                    # wraps it at &8000 to &3000 (MODE 5 wraps to &5800)
+
+# ---- the window's screen mode: 1 (four colours, the default) or 2 (sixteen) ---------
+# MODE 0-2 fetch alike, a byte every half microsecond, so the ring, the lead-in and the
+# strip work on bytes unchanged; only the window's lines are MODE 2 (DESIGN.md
+# section 10).  A character is 4 MODE 1 pixels, or 2 MODE 2 pixels.
+SCRMODE = int(os.environ.get('SCRMODE', '1') or '1')
+assert SCRMODE in (1, 2)
+MW = M1 if SCRMODE == 1 else M2          # the window's mode value
+PPC = 4 if SCRMODE == 1 else 2           # pixels a character
+LMASK = 0x77 if SCRMODE == 1 else 0x55   # a byte with its leftmost pixel black
 
 # ---- palette ------------------------------------------------------------------------
 K, C, M, Y = 0, 1, 2, 3
@@ -77,6 +89,68 @@ def palette_bytes():
 
 
 # ---- the pattern --------------------------------------------------------------------
+# MODE 2: logical colour L -> 3-bit colour (bit 0 red, 1 green, 2 blue): L for L < 8,
+# 15 - L above, so each of the eight colours has two logical names (0 and 15 are black)
+# and the test card exercises every palette register.
+PAL2 = [L if L < 8 else 15 - L for L in range(16)]
+
+
+def palette_bytes2():
+    """&FE08..&FE0F for PAL2 (a set bit turns the component off).  Register pair
+    (&FE08+2i, &FE09+2i) holds logical colours base_i | {0, 2, 8, 10}, base = 0, 4, 5,
+    1 (docs/ULA-NOTES.md section 9)."""
+    regs = [0] * 8
+    for i, base in enumerate((0, 4, 5, 1)):
+        for j, off in enumerate((0, 2, 8, 10)):
+            rgb = PAL2[base | off]
+            r, g, b = rgb & 1, (rgb >> 1) & 1, (rgb >> 2) & 1
+            lo, hi = 2 * i, 2 * i + 1         # (&FE08+2i, &FE09+2i)
+            regs[hi] |= r << j
+            if j < 2:
+                regs[hi] |= g << (4 + j)
+                regs[lo] |= b << (4 + j)
+            else:
+                regs[lo] |= g << j | b << (4 + j)
+    return [(~v) & 0xFF for v in regs]
+
+
+def mode2_byte(l, r):
+    """Two logical colours (left, right) -> a MODE 2 screen byte."""
+    v = 0
+    for k in range(4):
+        v |= ((l >> (3 - k)) & 1) << (7 - 2 * k) | ((r >> (3 - k)) & 1) << (6 - 2 * k)
+    return v
+
+
+# The MODE 2 test card: the Amstrad CPC's palette.  The CPC's 27 colours have each of
+# red, green and blue off, half or full; each is the average of two of the Electron's
+# eight -- A with every component that is at least half on, B with every component that
+# is full -- so a block is A and B in a 1 x 2 dither, the pair alternating along each
+# line and swapping on the next.  The 26 colours other than black, each colour of a
+# pair under one of its two logical names (chosen per hash value).
+CPC = [(r, g, b) for r in range(3) for g in range(3) for b in range(3) if (r, g, b) != (0, 0, 0)]
+assert len(CPC) == 26
+
+
+def cpc_pair(lv):
+    """(A, B): the two Electron colours whose average is CPC levels lv."""
+    a = sum(int(l >= 1) << i for i, l in enumerate(lv))
+    b = sum(int(l == 2) << i for i, l in enumerate(lv))
+    return a, b
+
+
+def dithers2():
+    """(even-line, odd-line) MODE 2 bytes for the 256 hash values."""
+    name = {c: [L for L in range(16) if PAL2[L] == c] for c in range(8)}
+    rng = random.Random(2026)
+    out = []
+    for v in range(256):
+        a, b = cpc_pair(CPC[v % len(CPC)])
+        la, lb = rng.choice(name[a]), rng.choice(name[b])
+        out.append((mode2_byte(la, lb), mode2_byte(lb, la)))
+    return out
+
+
 def mode1_byte(px):
     """Four logical colours (left to right) -> a MODE 1 screen byte."""
     v = 0
@@ -105,8 +179,8 @@ _rng.shuffle(PERM)
 PERM = [PERM[i & 127] for i in range(256)]
 PERM2 = list(range(256))
 _rng.shuffle(PERM2)
-DITH = dithers()
-IDX = [PERM2[v] % 35 for v in range(256)]          # hash value -> colour number
+DITH = dithers() if SCRMODE == 1 else dithers2()
+IDX = [PERM2[v] % 35 for v in range(256)] if SCRMODE == 1 else PERM2   # hash value -> colour
 
 
 def block_colour(bx, by):
@@ -116,18 +190,23 @@ def block_colour(bx, by):
 
 
 def pixel(mx, my):
-    """Logical colour of map pixel (mx in MODE 1 pixels, my in scanlines)."""
-    if (mx & 15) == 0 or (my & 15) == 15:
+    """Logical colour of map pixel (mx in the window mode's pixels, my in scanlines).
+    A block is four characters across: 16 MODE 1 pixels or 8 MODE 2 pixels."""
+    bw = 4 * PPC
+    if (mx % bw) == 0 or (my & 15) == 15:
         return 0
-    ev, od = DITH[block_colour(mx >> 4, my >> 4)]
+    ev, od = DITH[block_colour(mx // bw, my >> 4)]
     b = od if (my & 1) else ev
+    if SCRMODE == 2:
+        s = 1 - (mx & 1)
+        return sum(((b >> (2 * k + s)) & 1) << k for k in range(4))
     p = mx & 3
     return ((b >> (7 - p)) & 1) << 1 | ((b >> (3 - p)) & 1)
 
 
 def expected_window(wx, wy):
-    """The window's pixels for position (wx, wy): H rows of WIN_W * 4 logical colours."""
-    return [[pixel((wx * 4 + x) % (MAPW * 4), (wy + y) % MAPW) for x in range(WIN_W * 4)]
+    """The window's pixels for position (wx, wy): H rows of WIN_W * PPC logical colours."""
+    return [[pixel((wx * PPC + x) % (MAPW * PPC), (wy + y) % MAPW) for x in range(WIN_W * PPC)]
             for y in range(H)]
 
 
@@ -361,7 +440,8 @@ def gen_loop2():
         L += [f'g{P}:\tsta\ta:DUMMY\t\t; the entering cell: the 8-byte block, patched per',
               '\tlda\t#0', '\tsta\ta:DUMMY\t\t; the leaving cell: row, stepped per line',
               '\tPADN\tPAD_W1', '\tlda\t#M3', '\tsta\tULA_MODE\t\t; MODE 3 in the sync', '\tPADN\tPAD_W2',
-              f'vc{P}:\tlda\t#M1\t\t; patched: the lead-in mode', '\tsta\tULA_MODE', '\tlda\t#M1',
+              f'vc{P}:\tlda\t#M1\t\t; patched: the lead-in mode', '\tsta\tULA_MODE',
+              '\tlda\t#MW\t\t; the window\'s mode, for the variant',
               '\tPADN\tPAD_W3', '\tjmp\t(VJ)\t\t; the variant, or VX on the last line']
     L.append('\t.assert\t>VRET = >VJ, error, "VRET and VJ must share a page (the exit patch)"')
     # tables by block index 8 * parity + line (strip.s): each block, its tail, its hook's
@@ -381,10 +461,14 @@ def gen_loop2():
 
 def gen_snips():
     """The dummy snippet the lines above the window run (loop 1): both stores go to
-    DUMMY, MODE 3 in the sync, the lead-in mode (Y), then the variant (VVEC1)."""
+    DUMMY, MODE 3 in the sync, then the lead-in mode -- an immediate (DSNV) that
+    setup_frame patches, because those lines are always MODE 1 even when the window is
+    MODE 2, while Y holds the window's value for the palette line.  The value goes to
+    the dummy page on its way (the same cycles as lda #0 / sta / sty).  Then the
+    variant (VVEC1), which writes MODE 1."""
     L = [HEADER, '\t.segment "SNIPS"', 'DSNIP:', '\tlda\tDSNIPD,x', '\tsta\ta:DUMMY,x', '\tlda\t#M3',
-         '\tsta\tULA_MODE', '\tlda\t#0', '\tsta\ta:DUMMY,x', '\tsty\tULA_MODE', '\tlda\t#M1',
-         '\tjmp\t(VVEC1)', 'DSNIPD:\t.res\t8']
+         '\tsta\tULA_MODE', 'DSNV:\tlda\t#M1\t\t; patched: the lead-in mode above the window',
+         '\tsta\ta:DUMMY,x', '\tsta\tULA_MODE', '\tlda\t#M1', '\tjmp\t(VVEC1)', 'DSNIPD:\t.res\t8']
     return '\n'.join(L) + '\n'
 
 
@@ -415,8 +499,8 @@ def gen_tables():
     L += table('PERM', PERM)
     L += table('PE', pe)
     L += table('PO', po)
-    L += table('PEM', [b & 0x77 for b in pe])
-    L += table('POM', [b & 0x77 for b in po])
+    L += table('PEM', [b & LMASK for b in pe])
+    L += table('POM', [b & LMASK for b in po])
     # ring arithmetic: hi byte of an address that may have left &3000-&7FFF -> back in
     L += table('WRAPHI', [(h - 0x50) & 0xFF if h >= 0x80 else (h + 0x50) & 0xFF if h < 0x30 else h
                           for h in range(256)])
@@ -442,9 +526,16 @@ def gen_tables():
         L.append(f'VS{part}_BY_X:\t.byte ' + ','.join(f'<VS{part}{u}' for u in ux))
         L.append(f'VS{part}H_BY_X:\t.byte ' + ','.join(f'>VS{part}{u}' for u in ux))
     L.append('VS2_BY_X:\t.byte ' + ','.join(f'<VS2{u}' for u in ux))   # (VJ: low byte only)
-    L.append('VA_BY_X:\t.byte ' + ','.join(f'${M5 if u < 2 else M1:02X}' for u in ux))
-    L.append('VC_BY_X:\t.byte ' + ','.join(f'${M7 if u else M1:02X}' for u in ux))
+    L.append('VA_BY_X:\t.byte ' + ','.join(f'${M5 if u < 2 else MW:02X}' for u in ux))
+    L.append('VC_BY_X:\t.byte ' + ','.join(f'${M7 if u else MW:02X}' for u in ux))
     L.append('\tNOCROSS\tR576LT, VC_BY_X + 16 - R576LT')
+    # the blip and the lead-in mode above the window, which is always MODE 1 (the same
+    # as the window's in a MODE 1 build)
+    L.append('\t.segment "TABLES4"')
+    L.append('VA1_BY_X:\t.byte ' + ','.join(f'${M5 if u < 2 else M1:02X}' for u in ux))
+    L.append('VC1_BY_X:\t.byte ' + ','.join(f'${M7 if u else M1:02X}' for u in ux))
+    L.append('\tNOCROSS\tVA1_BY_X, 32')
+    L.append('\t.segment "TABLES"')
     # small tables, unaligned, after the hand-written ones (segment TABLES3)
     L.append('\t.segment "TABLES3"')
     # LE[4 c + k] = 1 if notch class c is due at phase k (c <= k)
@@ -460,7 +551,11 @@ def gen_tables():
 
 
 def gen_config():
-    p8, p9 = palette_bytes()
+    if SCRMODE == 1:
+        p8, p9 = palette_bytes()
+        rest = [0xFF] * 6                       # (only MODE 2 reads &FE0A-&FE0F)
+    else:
+        p8, p9, *rest = palette_bytes2()
     return '\n'.join([
         HEADER,
         f'Y0 = {Y0}', f'Y1 = {Y1}', f'H = {H}', f'WIN_C = {WIN_C}', f'WIN_W = {WIN_W}',
@@ -468,6 +563,8 @@ def gen_config():
         f'M1 = ${M1:02X}', f'M3 = ${M3:02X}', f'M5 = ${M5:02X}', f'M6 = ${M6:02X}', f'M7 = ${M7:02X}',
         f'NROWS = {NROWS}',
         f'PAL8 = ${p8:02X}', f'PAL9 = ${p9:02X}',
+        *[f'PAL{r} = ${v:02X}' for r, v in zip('ABCDEF', rest)],
+        f'SCRMODE = {SCRMODE}', f'M2 = ${M2:02X}', f'MW = ${MW:02X}', f'LMASK = ${LMASK:02X}',
     ]) + '\n'
 
 
@@ -487,6 +584,9 @@ def main(out):
     # the model for emu/elkh's soak: Y0, H, WIN_C, WIN_W, then PERM, PE, PO
     with open(os.path.join(out, 'model.bin'), 'wb') as f:
         f.write(bytes([Y0, H, WIN_C, WIN_W]) + bytes(PERM) + bytes(pe) + bytes(po))
+        # then the window's mode and, for MODE 2, its palette as the emulator's pixels
+        # (red 4, green 2, blue 1)
+        f.write(bytes([SCRMODE]) + bytes(((c & 1) << 2) | (c & 2) | (c >> 2) for c in PAL2))
 
 
 if __name__ == '__main__':

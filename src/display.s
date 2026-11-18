@@ -101,11 +101,14 @@ setup_frame:
 	sta	VJ
 	lda	#>VX
 	sta	VJ+1
-	lda	VA_BY_X,x		; the blip
+	lda	VA1_BY_X,x		; the blip above the window (always MODE 1) ...
 	sta	va1+1
 	sta	vap+1
+	lda	VA_BY_X,x		; ... and in it
 	sta	vav
-	lda	VC_BY_X,x		; the lead-in mode
+	lda	VC1_BY_X,x		; the lead-in mode above the window ...
+	sta	DSNV+1
+	lda	VC_BY_X,x		; ... and in it (the palette line's sty, the gadgets)
 	sta	vcv
 	sta	vcA+1
 	sta	vcB+1

@@ -88,7 +88,7 @@ palb:	PADN	7
 	sta	ULA_PAL9		; S+13
 	nop
 	sty	ULA_MODE		; S+17: the lead-in mode
-	lda	#M1
+	lda	#MW			; the window's mode (MODE 1, or MODE 2)
 	jmp	(VVECP)			; the lead-in variant
 backP:	ldx	vav			; X = the blip's mode value, through the window
 	DELAY	CAL_ENT
