@@ -1,20 +1,22 @@
 ; frame.s -- the bottom of the frame: everything between the window's last line and
 ; the next field's raster lock (docs/DESIGN.md section 6).
 ;
-; Entered from the window's exit block (VX) at line 200.  In order:
-;   variable length (must end before line 249, display end in a text mode):
+; Entered from the window's exit block (VX) at line 200, which leaves MODE 4: a
+; graphics mode, so display end comes at line 255.  In order:
+;   variable length (must end before line 255):
 ;     the keys and the schedule switch, the trajectory (logic.s), the vertical step's
 ;     plan (notch.s: vstep); then a poll for display end, which absorbs the variation;
 ;   fixed length (calibrated in cal.inc, every path padded to the same time):
-;     the vertical step's stores (notch.s: nstore, 1,657 cycles, a step or not);
+;     the vertical step's stores (notch.s: nstore, about 2,120 cycles, a step or not);
 ;     the column step's edge rows (colop.s) -- for a commit, for the behind field of a
-;     2-column step, or a pad for an idle field; the strip for the next field
-;     (strip.s); the next field's display parameters (display.s); and a counted delay
-;     (frame_tail) to the lock read in line 0.
+;     2-column step, or a pad for an idle field; spare time (CAL_SPARE); the next
+;     field's display parameters (display.s); and a counted delay (frame_tail) to the
+;     lock read in line 0.  (The strip for the next field is built above its window,
+;     raster.s.)
 ; The "bit ULA_STAT" reads are markers: harmless status reads whose raster positions
 ; the emulator's I/O log records (the soak finds the variable work's end by them).
 	.segment "CODE"
-work:					; ---- variable length: must end before line 249 ----
+work:					; ---- variable length: must end before line 255 ----
 	bit	ULA_STAT		; marker: the bottom of the frame begins
 	lda	fpar			; the field parity alternates
 	eor	#1
@@ -45,8 +47,9 @@ wk_de:	lda	ULA_STAT
 	bit	ULA_STAT
 	jsr	nstore			; the vertical step's stores (or the dummy page's)
 	lda	cnext
-	beq	wk_noc
-	; a commit (shown next field): the ahead column's edge rows now; the strip will
+	bne	:+			; (a jmp: a long branch here would cross a page in some layouts)
+	jmp	wk_noc
+:	; a commit (shown next field): the ahead column's edge rows now; the strip will
 	; store its window lines ahead of the beam
 	ldx	#1
 	and	#$80
@@ -113,7 +116,8 @@ wk_pl:	bit	ULA_STAT		; marker
 	sta	cnext
 	lda	hnew
 	sta	cnext2
-	jsr	build			; the strip
+	LDELAY	CAL_SPARE		; spare time, kept as a delay so that the lock read
+					; stays where it is (free for a game's fixed-length work)
 	bit	ULA_STAT		; marker
 	jsr	setup_frame
 	jsr	ula_apply

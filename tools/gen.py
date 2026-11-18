@@ -8,7 +8,6 @@ writes, into OUTDIR:
     config.inc      geometry, mode values and palette bytes (assembler constants)
     gen_tables.s    the pattern, ring-arithmetic and dispatch tables (segment TABLES)
     gen_variants.s  the lead-in variants and the window's exit block (segment VARIANTS)
-    gen_snips.s     the dummy snippet the lines above the window run (segment SNIPS)
     gen_loop2.s     the window: two gadgets and sixteen line blocks (segment LOOP2)
     model.bin       the pattern for the emulator's in-process checker (emu/elkh soak)
 
@@ -39,7 +38,7 @@ import swatch35  # noqa: E402
 
 # ---- geometry (DESIGN.md section 2) ------------------------------------------------
 Y0 = 30            # first window scanline (the text-mode band above it is at most 30 lines)
-Y1 = 200           # first scanline below the window (MODE 6 from here to the field's end)
+Y1 = 200           # first scanline below the window (MODE 4 from here to the field's end)
 H = Y1 - Y0        # window height in scanlines
 WIN_C = 15         # screen character (MODE 1, 0..79) of the window's left edge: the
                    # longest lead-in (8 us on the real ULA) must end before it
@@ -51,7 +50,7 @@ RING = 0x5000      # the 20K screen ring the ULA wraps (&3000-&7FFF)
 ROWB = 576         # bytes in a ring row: 72 characters
 
 # ---- the ULA's mode register values (&FE07; comms off, LED and motor off) ----------
-M1, M2, M3, M5, M6 = 0x08, 0x10, 0x18, 0x28, 0x30
+M1, M2, M3, M4, M5, M6 = 0x08, 0x10, 0x18, 0x20, 0x28, 0x30
 M7 = 0x38          # mode value 7: fetches like MODE 4 (40 columns), but the real ULA
                    # wraps it at &8000 to &3000 (MODE 5 wraps to &5800)
 
@@ -316,8 +315,8 @@ def gen_variants():
     """The lead-in variants VS{part}{u}, u = 0..8.  Each is entered at cycle 41 after
     S with A = M1; VSu is u nops and the store (which lands at S + 23 + u us), padded so
     that all take the same time, then a jump back into the loop.  VS0 writes nothing.
-    Parts: 1, the lines above the window (back to back1); P, the palette line (backP);
-    2, the window (through VRET, set by each line's block to the next).  The window's
+    Parts: P, the palette line (backP); 2, the window (through VRET, set by each line's
+    block to the next).  The window's
     set shares a page with VX, its exit block, so that VJ (the gadgets' jump) changes
     by its low byte only."""
     check_schedules()
@@ -331,14 +330,12 @@ def gen_variants():
         return out + [f'\tjmp\t{back}']
 
     L = [HEADER, '\t.segment "VARIANTS"',
-         'VX:', '\tlda\t#$FF', '\tsta\tULA_PAL8', '\tsta\tULA_PAL9', '\tlda\t#M6', '\tsta\tULA_MODE', '\tjmp\twork']
+         'VX:', '\tlda\t#$FF', '\tsta\tULA_PAL8', '\tsta\tULA_PAL9', '\tlda\t#M4', '\tsta\tULA_MODE', '\tjmp\twork']
     for u in range(9):
         L += variant('2', u, '(VRET)')
     L.append('\t.assert\t>VX = >*, error, "the window\'s variants and VX must share a page"')
     for u in range(9):
         L += variant('P', u, 'backP')
-    for u in range(9):
-        L += variant('1', u, 'back1')
     return '\n'.join(L) + '\n'
 
 
@@ -459,19 +456,6 @@ def gen_loop2():
     return '\n'.join(L) + '\n'
 
 
-def gen_snips():
-    """The dummy snippet the lines above the window run (loop 1): both stores go to
-    DUMMY, MODE 3 in the sync, then the lead-in mode -- an immediate (DSNV) that
-    setup_frame patches, because those lines are always MODE 1 even when the window is
-    MODE 2, while Y holds the window's value for the palette line.  The value goes to
-    the dummy page on its way (the same cycles as lda #0 / sta / sty).  Then the
-    variant (VVEC1), which writes MODE 1."""
-    L = [HEADER, '\t.segment "SNIPS"', 'DSNIP:', '\tlda\tDSNIPD,x', '\tsta\ta:DUMMY,x', '\tlda\t#M3',
-         '\tsta\tULA_MODE', 'DSNV:\tlda\t#M1\t\t; patched: the lead-in mode above the window',
-         '\tsta\ta:DUMMY,x', '\tsta\tULA_MODE', '\tlda\t#M1', '\tjmp\t(VVEC1)', 'DSNIPD:\t.res\t8']
-    return '\n'.join(L) + '\n'
-
-
 def table(name, vals, align=True):
     out = ['\t.align 256'] if align else []
     out.append(f'{name}:')
@@ -522,20 +506,12 @@ def gen_tables():
     # variant of each loop part, the blip's mode value (M5 when u <= 1) and the lead-in
     # write's (M1 when u = 0, else mode 7)
     tx, ux = lead_in_index()
-    for part in ('1', 'P'):
-        L.append(f'VS{part}_BY_X:\t.byte ' + ','.join(f'<VS{part}{u}' for u in ux))
-        L.append(f'VS{part}H_BY_X:\t.byte ' + ','.join(f'>VS{part}{u}' for u in ux))
+    L.append('VSP_BY_X:\t.byte ' + ','.join(f'<VSP{u}' for u in ux))
+    L.append('VSPH_BY_X:\t.byte ' + ','.join(f'>VSP{u}' for u in ux))
     L.append('VS2_BY_X:\t.byte ' + ','.join(f'<VS2{u}' for u in ux))   # (VJ: low byte only)
     L.append('VA_BY_X:\t.byte ' + ','.join(f'${M5 if u < 2 else MW:02X}' for u in ux))
     L.append('VC_BY_X:\t.byte ' + ','.join(f'${M7 if u else MW:02X}' for u in ux))
     L.append('\tNOCROSS\tR576LT, VC_BY_X + 16 - R576LT')
-    # the blip and the lead-in mode above the window, which is always MODE 1 (the same
-    # as the window's in a MODE 1 build)
-    L.append('\t.segment "TABLES4"')
-    L.append('VA1_BY_X:\t.byte ' + ','.join(f'${M5 if u < 2 else M1:02X}' for u in ux))
-    L.append('VC1_BY_X:\t.byte ' + ','.join(f'${M7 if u else M1:02X}' for u in ux))
-    L.append('\tNOCROSS\tVA1_BY_X, 32')
-    L.append('\t.segment "TABLES"')
     # small tables, unaligned, after the hand-written ones (segment TABLES3)
     L.append('\t.segment "TABLES3"')
     # LE[4 c + k] = 1 if notch class c is due at phase k (c <= k)
@@ -560,7 +536,7 @@ def gen_config():
         HEADER,
         f'Y0 = {Y0}', f'Y1 = {Y1}', f'H = {H}', f'WIN_C = {WIN_C}', f'WIN_W = {WIN_W}',
         f'GAP = {72 - WIN_W}',
-        f'M1 = ${M1:02X}', f'M3 = ${M3:02X}', f'M5 = ${M5:02X}', f'M6 = ${M6:02X}', f'M7 = ${M7:02X}',
+        f'M1 = ${M1:02X}', f'M3 = ${M3:02X}', f'M4 = ${M4:02X}', f'M5 = ${M5:02X}', f'M6 = ${M6:02X}', f'M7 = ${M7:02X}',
         f'NROWS = {NROWS}',
         f'PAL8 = ${p8:02X}', f'PAL9 = ${p9:02X}',
         *[f'PAL{r} = ${v:02X}' for r, v in zip('ABCDEF', rest)],
@@ -575,7 +551,6 @@ def main(out):
         'config.inc': gen_config(),
         'gen_tables.s': tables,
         'gen_variants.s': gen_variants(),
-        'gen_snips.s': gen_snips(),
         'gen_loop2.s': gen_loop2(),
     }
     for name, text in files.items():

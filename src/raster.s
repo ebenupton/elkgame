@@ -24,60 +24,45 @@ entry:	jmp	init			; &8000, from the loader, with A = this bank's number
 ; of about +-20 us in the timing of the work below the window (frame.s).  Line 0 and
 ; line 1 are MODE 1 or MODE 3 (topmode), so both reads stall.
 ;
-; Then: band_n - 1 more lines counted, to the first iteration's line; the iterations of
-; loop 1 (the lines above the palette line, n1 of them); the palette line; and loop 2,
-; the window.
+; Then the rest of the lines above the window are MODE 4, or MODE 6 in the band (the f
+; 10-line rows at the top, docs/DESIGN.md 2.4): 40-column modes, which the ULA fetches
+; for without holding up the CPU, so main RAM runs at 1 MHz, uncontended, and the time
+; is free for fixed-length work.  No per-line writes are needed: every row above the
+; window is 320 bytes, a multiple of 64, so each starts aligned.  The band ends at line
+; 10f - 1 with a switch to MODE 4 at S + 17 us: written on lines 9 and 19 by table
+; (fw9, fw19: the band's end, or no change), and on line 29 by the palette line's
+; lead-in write.  Between the writes: the free time (the strip build, frame.s, and
+; delays a game can replace: CAL_TA, CAL_TB, CAL_TC).
 ;
-; The scanline loop.  One iteration a line, 128 cycles.  Iteration y runs from the
-; right margin of line y to the lead-in of line y+1 (us after S of line y):
-;   -3     the blip: MODE 5 when the lead-in is 0 or 1 us (else MODE 1, no change)
-;   0..14  two stores (in the window: the entering column's byte and the leaving zero)
+; Then the palette line and loop 2, the window.  The scanline loop: one iteration a
+; line, 128 cycles; iteration y runs from the right margin of line y to the lead-in of
+; line y+1 (us after S of line y):
+;   -3     the blip: MODE 5 when the lead-in is 0 or 1 us (else the window's mode, no
+;          change); not on the palette line, whose line is a 40-column one
+;   0..14  two stores (in the window: the entering column's byte and the leaving zero;
+;          on the palette line, the palette)
 ;   +9     MODE 3, inside the line sync
-;   +17    the lead-in mode: mode 7 (40 columns), or MODE 1 when there is no lead-in
-;          (+15 in the window's gadgets)
-;   +23+u  MODE 1 (the variant, gen_variants.s; none when u = 0)
-; Three parts: loop 1, the lines above the window (the dummy snippet DSNIP: both
-; stores to the dummy page); the palette line (iteration Y0-1, whose two stores are
-; the palette's); loop 2, the window (gen_loop2.s, below).  In loop 1 and the palette
-; line, Y is the lead-in mode value (vcv).
+;   +17    the lead-in mode: mode 7 (40 columns), or the window's when there is no
+;          lead-in (+15 in the window's gadgets)
+;   +23+u  the window's mode (the variant, gen_variants.s; none when u = 0)
 	.segment "LOOP"
 frame_top:
 	lda	SYNCB			; stalls until S of line 0 -- or, issued late (after
 	DELAY	CAL_L2			; line 0's last fetch), returns at once
-	ldx	band_n			; >= 1: lines to the first iteration, counted from line 0
-	dex
 	lda	SYNCB			; the lock: stalls until S of line 1 either way
-	txa
-	beq	fnob
-bandl:	DELAY	123
-	dex
-	bne	bandl			; 128 a line, 127 the last
-	nop
-fnob:
-	DELAY	CAL_PRE
-	ldy	vcv			; Y = the lead-in mode value, for loop 1 and the palette line
-	ldx	#0
-	lda	n1
-	beq	@pal			; (no lines above the palette line's)
-	sta	cnt1
-	jmp	wl1b
-@pal:	DELAY	CAL_PREP
-	jmp	palb
+ftop:	lda	#M4			; patched (setup_frame): M4, or M6 in a band
+	sta	ULA_MODE		; line 1, S + 3 us: uncontended from here to the window
+	LDELAY	CAL_TA			; (free)
+fw9:	lda	#M4			; patched: M4, or M6 if the band runs on past line 9
+	sta	ULA_MODE		; line 9, S + 17 us
+	jsr	build			; the strip for this field's window (strip.s)
+	LDELAY	CAL_TB			; (free)
+fw19:	lda	#M4			; patched: M4, or M6 if the band runs on past line 19
+	sta	ULA_MODE		; line 19, S + 17 us
+	LDELAY	CAL_TC			; (free)
+	ldy	vcv			; Y = the lead-in mode value, for the palette line
 
-; loop 1: the lines above the window
-wl1:	PADN	3
-va1:	lda	#M1			; patched (setup_frame): the blip's mode value
-	sta	ULA_MODE		; S-3
-wl1b:	PADN	2
-	jmp	DSNIP			; the dummy snippet: stores to DUMMY, MODE 3, +17
-back1:	DELAY	37
-	dec	cnt1
-	bne	wl1
-
-; the palette line: the same skeleton, its two stores the palette's
-	PADN	4
-vap:	lda	#M1			; patched: the blip
-	sta	ULA_MODE
+; the palette line: its two stores the palette's
 palb:	PADN	7
 	lda	#PAL8
 	sta	ULA_PAL8		; S+4
@@ -87,13 +72,12 @@ palb:	PADN	7
 	lda	#PAL9
 	sta	ULA_PAL9		; S+13
 	nop
-	sty	ULA_MODE		; S+17: the lead-in mode
+	sty	ULA_MODE		; S+17: the lead-in mode (on line 29 of a 3-row band, its end)
 	lda	#MW			; the window's mode (MODE 1, or MODE 2)
 	jmp	(VVECP)			; the lead-in variant
 backP:	ldx	vav			; X = the blip's mode value, through the window
 	DELAY	CAL_ENT
-wtP:	jmp	tA0			; patched: the tail that loads the first window line
-	.assert	>frame_top = >*, error, "loop 1 must sit in one page"
+wtP:	jmp	tA0			; patched (build): the tail that loads the first window line
 
 ; ---- loop 2: the window ---------------------------------------------------------------
 ; Two gadgets of horizontal-blanking code, gA for even map rows and gB for odd, and
@@ -111,4 +95,3 @@ wtP:	jmp	tA0			; patched: the tail that loads the first window line
 	.include "gen_loop2.s"
 
 	.include "gen_variants.s"
-	.include "gen_snips.s"

@@ -33,8 +33,8 @@ For **every field**, elkh's `soak` checks:
 | Check | Pass condition |
 |---|---|
 | picture | every pixel of the window equals the pattern model (`tools/gen.py`, exported as `model.bin`) at the position the program holds for that field, and no pixel outside the window is lit |
-| lock | the window's exit write (MODE 6) lands at exactly line 200, h 120, and the lock read stalls in line 0 |
-| deadline | the variable-length work ends before line 249 (display end) |
+| lock | the window's exit write (MODE 4) lands at exactly line 200, h 120, and the lock read stalls in line 0 |
+| deadline | the variable-length work ends before line 255 (display end) |
 | pad | no non-zero byte is fetched in a 40-column mode on a window line: "pad" in the lead-in, "blip" at the right edge. Either would show on hardware whose phase differs from the emulator's, even if the emulated picture is right |
 
 Over the whole run, the store audit checks:
@@ -101,6 +101,7 @@ not been simulated on the HDL.**
 | 5, line blocks | the window loop rebuilt: two gadgets with absolute stores and sixteen line blocks that prepare the next row in the visible part; the strip builder 3,554 → ~950 cycles | the lead-in mode write moves from +17 to +15 µs (the phase model's coverage is unchanged, S 648–663); otherwise every write where the old loop put it, the fixed work and the lock read within 2 cycles of the original's (six fingerprinted trajectories). Soak: 16 runs × 50,000 fields = 800,000, both ULA models, all clean; variable work ended by line 242 at worst; lock read at h 344–664 |
 | 6, MODE 2 | the window's screen mode a build option (`SCRMODE=2`: 114 × 170 pixels, sixteen colours, the CPC-palette test card); both demos built by default | MODE 1: timing identical to the build before (six fingerprints: every write, the fixed work and the lock read, in every field). Negative control: the MODE 2 program against the MODE 1 model fails 200 of 200 fields. Soak: 16 runs × 50,000 fields = 800,000, four runs each of MODE 1 and MODE 2 on each ULA model, all clean; lock read at h 344–664 |
 | 7, split notch | the vertical step as a plan (variable work, ~1,400 cycles) and constant-time stores after display end (`nstore`, ~2,120 cycles, every field) | six fingerprints: picture writes identical, fixed work +0. A field with a step: 2,000–2,900 cycles of variable work (was 3,800–5,200). Negative control (by accident): a wrong span-mask offset failed every field. Soak: 16 runs × 50,000 fields = 800,000, both modes on both ULA models, all clean |
+| 8, MODE 4 | lines 2–29 MODE 4 (MODE 6 in the band) instead of MODE 1/3: loop 1 gone, 2,595 cycles of free fixed-length time above the window, the strip build there; MODE 4 below the window, display end at line 255 | six fingerprints: every write from the palette line on identical (the window's exit's value aside), the lock read's spread as before (h 344–680). The strip build made constant (960 cycles: `addrow` off the stack). Soak: 16 runs × 50,000 fields = 800,000, both modes on both ULA models, all clean; variable work ended by line 223 |
 
 To run the soak yourself: `make emu`, put the ROMs in `roms/`, then
 `test/soak.sh -n 100000 -r 40`. With eight runs at once a run of 100,000 fields takes

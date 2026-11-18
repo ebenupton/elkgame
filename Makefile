@@ -40,7 +40,7 @@ all:
 	@$(MAKE) --no-print-directory one SCRMODE=2 BUILD=$(BUILD)/mode2
 one: $(BUILD)/$(IMG).ssd
 
-# config.inc, gen_tables.s, gen_variants.s, gen_snips.s and model.bin, all at once.
+# config.inc, gen_tables.s, gen_variants.s and model.bin, all at once.
 $(GEN)/stamp: tools/gen.py tools/swatch35.py $(BUILD)/defines
 	SCRMODE=$(SCRMODE) $(PYTHON) tools/gen.py $(GEN)
 	@touch $@

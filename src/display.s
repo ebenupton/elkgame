@@ -3,9 +3,11 @@
 ;
 ; Horizontally: t = (WIN_C - wx) & 7 characters of lead-in, and a screen start at the
 ; 64-byte-aligned column cb = wx - WIN_C + t, so that the window's first pixel is map
-; column wx.  Vertically: f = ((Y0 - wy) & 7) / 2 rows of 10-line text mode (MODE 3)
-; above the window push the first MODE 1 row down by 2f lines; the screen start is
-; then the row of map scanline wy + 10f - Y0, less the 640 f bytes the text rows fetch.
+; column wx.  Vertically: f = ((Y0 - wy) & 7) / 2 rows of 10-line text mode (MODE 6,
+; MODE 3 on lines 0 and 1) at the top push the rows below down by 2f lines.  There are
+; always three rows above the window's first (f band rows and 3 - f MODE 4 rows: 10f +
+; 8 (3 - f) + (wy & 7) = Y0), each 320 bytes (40 columns), so the screen start is the
+; window's first row less 960.
 	.segment "CODE"
 setup_frame:
 	; t = (WIN_C - wx) & 7: the lead-in
@@ -37,44 +39,40 @@ setup_frame:
 	rol	cb8+1
 	asl	cb8
 	rol	cb8+1
-	; f = ((Y0 - wy) & 7) >> 1
+	; f = ((Y0 - wy) & 7) >> 1: the modes of lines 0 and 1, the rest of the band, and
+	; lines 9 and 19 (the band's end, or no change)
 	lda	#Y0
 	sec
 	sbc	wy
 	and	#7
 	lsr	a
 	tax
-	lda	BAND_N,x
-	sta	band_n
-	lda	N1TAB,x
-	sta	n1
 	lda	TOPMODE,x
 	sta	topmode
-	; y0 = ((wy + 10f - Y0) mod 2560) >> 3
-	lda	wy
-	clc
-	adc	F10M,x			; 10f - Y0 + 2560, low byte
-	sta	tmp
+	lda	TOP2,x
+	sta	ftop+1
+	lda	W9TAB,x
+	sta	fw9+1
+	lda	W19TAB,x
+	sta	fw19+1
+	; the window's first row: wy >> 3
 	lda	wy+1
-	adc	F10MH,x
-	tay
-	lda	MOD2560H,y		; hi byte mod &0A
 	sta	tmp+1
-	lda	tmp			; >> 3
+	lda	wy
 	lsr	tmp+1
 	ror	a
 	lsr	tmp+1
 	ror	a
 	lsr	tmp+1
 	ror	a
-	sta	tmp			; y0 low; tmp+1 = y0 high (0 or 1)
-	jsr	rowaddr			; A:Y = &3000 + (576 y0 + cb8) mod &5000 (Y high)
-	; the screen start = that - 640 f (the text rows fetch 640 bytes each)
+	sta	tmp			; low; tmp+1 = high (0 or 1)
+	jsr	rowaddr			; A:Y = &3000 + (576 row + cb8) mod &5000 (Y high)
+	; the screen start = that - 960 (>= &2C40: no wrap, and above &0800)
 	sec
-	sbc	F640L,x
+	sbc	#<960
 	sta	tmp
 	tya
-	sbc	F640H,x
+	sbc	#>960
 	sta	tmp+1
 	; &FE02 = (S >> 1) & &E0, &FE03 = (S >> 9) & &3F
 	lsr	a
@@ -89,10 +87,6 @@ setup_frame:
 	and	#7
 	ora	sched
 	tax
-	lda	VS1_BY_X,x
-	sta	VVEC1
-	lda	VS1H_BY_X,x
-	sta	VVEC1+1
 	lda	VSP_BY_X,x
 	sta	VVECP
 	lda	VSPH_BY_X,x
@@ -101,14 +95,9 @@ setup_frame:
 	sta	VJ
 	lda	#>VX
 	sta	VJ+1
-	lda	VA1_BY_X,x		; the blip above the window (always MODE 1) ...
-	sta	va1+1
-	sta	vap+1
-	lda	VA_BY_X,x		; ... and in it
+	lda	VA_BY_X,x		; the blip in the window
 	sta	vav
-	lda	VC1_BY_X,x		; the lead-in mode above the window ...
-	sta	DSNV+1
-	lda	VC_BY_X,x		; ... and in it (the palette line's sty, the gadgets)
+	lda	VC_BY_X,x		; the lead-in mode (the palette line's sty, the gadgets)
 	sta	vcv
 	sta	vcA+1
 	sta	vcB+1
@@ -150,7 +139,8 @@ ula_apply:
 	rts
 
 ; ---- addrow: A:Y <- &3000 + (576 yt + ra) mod &5000 (Y high), yt 0..319 (yt, yt_hi),
-; ra < &5000.  Both paths take the same time.
+; ra < &5000.  Both paths take the same time, with no main-RAM (stack) access: a 1 MHz
+; access's length depends on its cycle's phase, which would differ between the paths.
 addrow:
 	ldy	yt
 	lda	yt_hi
@@ -158,19 +148,19 @@ addrow:
 	lda	R576L,y
 	clc
 	adc	ra
-	pha
+	sta	art
 	lda	R576H,y
 	jmp	@s
 @hi:	nop				; (balances the jmp)
 	lda	R576LT,y
 	clc
 	adc	ra
-	pha
+	sta	art
 	lda	R576HT,y
 @s:	adc	ra+1
 	tay
 	lda	RINGHI,y
 	tay
-	pla
+	lda	art
 	rts
 

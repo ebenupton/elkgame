@@ -32,7 +32,8 @@
 //       build/gen/model.bin) at the position the program held for that field (read
 //       from WXADDR, the label wx in the sideways RAM bank), nothing lit outside the
 //       window, the raster lock (the window's exit write at its exact position, the
-//       lock read on line 0), the variable work's end before line 249, and the pad
+//       lock read on line 0), the variable work's end before line 255 (display end,
+//       in MODE 4), and the pad
 //       audit (non-zero bytes fetched in a 40-column mode on a window line: "pad" in
 //       the lead-in, "blip" at the right edge).  Writes OUT.rec (8 bytes a field:
 //       wx, wy, characters drawn by the vertical step, flags, the variable work's end
@@ -156,7 +157,8 @@ int soak(elk::Machine &m, int nf, const std::string &model_path, const std::stri
 			}
 		}
 
-		// The lock: the window's exit (MODE 6, &30) lands at line Y1, h 120 exactly; the
+		// The lock: the window's exit (MODE 4, &20, the first such write below line Y0:
+		// above it the lines are MODE 4 too) lands at line Y1, h 120 exactly; the
 		// lock read is the last status read before the first palette write of line 0.
 		// The variable work's end: the second status read after the exit (frame.s).
 		bool exit_ok = false, lock_ok = false, pal = false;
@@ -167,11 +169,11 @@ int soak(elk::Machine &m, int nf, const std::string &model_path, const std::stri
 				if(nrd >= 0 && ++nrd == 2) varend = a.v;
 			}
 			if(a.write && a.reg == 0x08 && a.value != 0xff && !pal) { pal = true; lock_ok = lastv == 0; lockh = lasth; }
-			if(a.write && a.reg == 0x07 && a.value == 0x30) { exit_ok = a.v == Y1 && a.h == 120; nrd = 0; }
+			if(a.write && a.reg == 0x07 && a.value == 0x20 && a.v >= Y0 && nrd < 0) { exit_ok = a.v == Y1 && a.h == 120; nrd = 0; }
 		}
 		const bool locked = exit_ok && lock_ok;
 		if(!locked) unlocked++;
-		if(varend >= 249 || varend < 0) late++;
+		if(varend >= 255 || varend < 0) late++;
 		maxvar = std::max(maxvar, varend);
 		if(lock_ok) { minlock = std::min(minlock, lockh); maxlock = std::max(maxlock, lockh); }
 
@@ -191,7 +193,7 @@ int soak(elk::Machine &m, int nf, const std::string &model_path, const std::stri
 			std::printf("field %d wx %d wy %d: pad %ld blip %ld; first line %d h %d addr %04x data %02x\n",
 				k, pwx, pwy, pad, blip, y, int(c.pad_h[y]), unsigned(c.pad_a[y]), unsigned(c.pad_d[y]));
 		}
-		if((bad || outside || !locked || varend >= 249) && shown < 12) {
+		if((bad || outside || !locked || varend >= 255) && shown < 12) {
 			shown++;
 			std::printf("field %d wx %d wy %d: bad %ld outside %ld locked %d (exit %d, lock read line %d h %d) var end line %d\n",
 				k, pwx, pwy, bad, outside, int(locked), int(exit_ok), lastv, lockh, varend);

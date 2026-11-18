@@ -1,5 +1,5 @@
-; strip.s -- setting up the beam-raced strip for the next field (docs/DESIGN.md 5.1).
-; Fixed length.
+; strip.s -- setting up the beam-raced strip for this field's window (docs/DESIGN.md
+; 5.1).  Fixed length; run above the window (raster.s), in the free time after the lock.
 ;
 ; A coarse step's entering column is written into the ring during the field that first
 ; shows it (or, for a 2-column step's first column, the field before), one byte and
@@ -251,8 +251,6 @@ bld_cols:	lda	sxin+1			; the hash's block term
 	lda	HKBH,y
 	sta	armA2+2
 	sta	armB2+2
-	LDELAY	CAL_SPARE		; spare time, kept as a delay so that the lock read
-					; stays where it is (free for a game's fixed-length work)
 	rts
 
 ; by 8 * parity (0: an even first row, gadget A first; 8: odd, B first)

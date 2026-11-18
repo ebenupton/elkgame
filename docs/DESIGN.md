@@ -46,11 +46,12 @@ The engine works round all four:
 
 - **Horizontal fine scroll** comes from changing the screen mode partway through every
   scanline (section 4).
-- **Vertical fine scroll** comes from a band of text-mode rows above the window
+- **Vertical fine scroll** comes from a band of text-mode rows at the top of the frame
   (section 2).
 - **Timing** comes from a stalled read that locks the program to the raster once a
   field. Interrupts are off and every cycle from there to the window's last line is
-  counted (sections 3 and 7).
+  counted (sections 3 and 7). Outside the window, the frame stays in 40-column modes
+  (MODE 4 and 6), where the CPU's main-RAM accesses are never held up.
 - **New picture** is written as the window moves, at a fixed and small cost per field.
   A new column is written by the scanline loop itself, one byte a line, just ahead
   of the beam. A new row is drawn a quarter at a time (section 5).
@@ -65,8 +66,8 @@ The engine works round all four:
 |---|---|
 | size | 57 characters × 170 scanlines = 228 × 170 pixels |
 | position | screen character 15 (of 80) across; lines 30–199 |
-| above it | lines 0–29: black, with 0–3 rows of 10-line text mode (MODE 3) at the top |
-| below it | lines 200–312: black, MODE 6 (a text mode: no contention, CPU at full speed) |
+| above it | lines 0–29: black. Lines 0 and 1 are MODE 1 or MODE 3 (for the lock); the rest MODE 4, with 0–3 rows of 10-line text mode (MODE 6) at the top |
+| below it | lines 200–312: black, MODE 4 (display end at line 255) |
 | palette | black, cyan, magenta, yellow; set on line 29, blacked out at line 200 |
 
 `gen.py` sets the geometry (`WIN_C`, `WIN_W`, `Y0`, `Y1`) and writes it to
@@ -120,14 +121,26 @@ instead (section 9).
 Vertical position is coarse plus fine:
 
 - **Coarse.** The screen start picks the character row of map scanline `wy`.
-- **Fine.** `f = ((Y0 − wy) & 7) / 2` rows of MODE 3 at the top of the frame push the
-  first MODE 1 row down by 2f lines. A MODE 3 row is 10 scanlines tall but advances
-  the address by only one row (8 scanlines' worth).
+- **Fine.** `f = ((Y0 − wy) & 7) / 2` rows of 10-line text mode at the top of the
+  frame push the rows below down by 2f lines. They are MODE 6, except that lines 0 and
+  1 are MODE 3, so that the lock's reads stall (3.1).
 
-Vertical steps are therefore 2 scanlines, and `wy` is always even. The band's lines
-are black: the palette is black until line 29. `setup_frame` (display.s) works out the
-screen start, `f`, the band's line counts (`BAND_N`, `N1TAB`) and line 0's mode
-(`TOPMODE`).
+Vertical steps are therefore 2 scanlines, and `wy` is always even. The lines above the
+window are black: the palette is black until line 29.
+
+**The rows above the window.** Below the band, the rows are MODE 4, 8 lines each. There
+are always exactly three rows above the window's first: 10f + 8 (3 − f) + (wy & 7) =
+30 = Y0. Each is 320 bytes, the 40 characters a MODE 4 or MODE 6 line fetches, so:
+- every row starts aligned (320 is a multiple of 64; 4.2), with no per-line writes;
+- the screen start is the window's first row less 960, always at least &2C40: the
+  counter never wraps above the window.
+
+The band ends on line 10f − 1 with a switch to MODE 4 at S + 17 µs, after that line's
+row counter has rolled over and before the next line's first fetch (`ULA-NOTES.md`
+11.3). The switch for f = 1 and 2 is written on lines 9 and 19 by table (`W9TAB`,
+`W19TAB`: MODE 4 there, MODE 6 to carry on). For f = 3 it's the palette line's lead-in
+write on line 29. `setup_frame` (display.s) works out the screen start, `f`, and the
+modes: lines 0 and 1 (`TOPMODE`), the band (`TOP2`) and the two switches.
 
 ---
 
@@ -141,17 +154,32 @@ main-RAM byte (`SYNCB`):
 - The first is aimed late in line 0.
 - The second is aimed mid line 1.
 
-In MODE 1 or MODE 3 a read stalls until that line's fetches end (S), so the second
-read always returns at S of line 1. The first read exists so that the lock tolerates
+Lines 0 and 1 are MODE 1, or MODE 3 when there is a band. In those modes a read stalls
+until that line's fetches end (S), so the second read always returns at S of line 1. The first read exists so that the lock tolerates
 errors: if the work below the window took a little too long, the first read lands
 after line 0's fetches and returns at once, and the second still stalls. The
 work below the window may be off by about **±20 µs** with every field still
 pixel-exact, so the fixed work need not be counted to the cycle. Its measured spread
 is about 12 µs (section 7).
 
+**Above the window: free time.** Just after the lock the mode goes to MODE 4 (or MODE 6
+in a band). In a 40-column mode the ULA fetches without holding up the CPU: a main-RAM
+access is an ordinary 1 MHz one. The lines down to the palette line need no per-line
+writes (2.4), only the band's two possible switches on lines 9 and 19. So the time
+between is free for fixed-length work:
+
+| from | to | what | cycles |
+|---|---|---|---|
+| line 1, S + 3 µs | line 9, S + 17 µs | `CAL_TA` (delay) | 1,042 |
+| line 9 | line 19, S + 17 µs | the strip build for this field's window (`build`, 5.1), then `CAL_TB` | 960 + 318 |
+| line 19 | the palette line | `CAL_TC` | 1,235 |
+
+That is 2,595 cycles of delay a game can replace with its own fixed-length work, such
+as sprite drawing, with main RAM at 1 MHz.
+
 ### 3.2 The loop
 
-From the lock, the program counts to the first iteration. Each **iteration** is
+From the free time, the program counts to the first iteration. Each **iteration** is
 exactly 128 cycles, one line. Iteration y runs from the right margin of line y to the
 lead-in of line y+1, and makes these writes (µs after S of line y):
 
@@ -164,12 +192,10 @@ lead-in of line y+1, and makes these writes (µs after S of line y):
 | +15 | &FE07: the lead-in mode | mode 7 (a 40-column mode), or MODE 1 if there is no lead-in |
 | +23+u | &FE07: MODE 1 | the **variant**: u nops then the store (none when u = 0). Section 4 |
 
-The loop has three parts:
+The loop has two parts:
 
-- **loop 1**: the lines above the window. A dummy snippet (`DSNIP`) stores to the
-  dummy page, writes MODE 3 and the lead-in mode.
 - **the palette line** (iteration Y0−1): its two stores are the palette's, &FE08 and
-  &FE09.
+  &FE09. It has no blip, because its line is a 40-column one.
 - **loop 2**: the window, iterations Y0..Y1−2, below.
 
 **Loop 2: two gadgets and sixteen line blocks** (`gen_loop2.s`, generated by `gen.py`).
@@ -211,11 +237,11 @@ register is needed to count lines.
 The last window line (line 199) goes to **VX** instead of a variant:
 
 - black palette (&FE08 = &FE09 = &FF);
-- MODE 6 for the rest of the field;
+- MODE 4 for the rest of the field;
 - then `jmp work`, the bottom of the frame (section 6).
 
-MODE 6 is a text mode, so display end is flagged at line 249 and main RAM is not
-contended. The redirect happens in the visible part of the second-to-last line:
+MODE 4 is a graphics mode, so display end is flagged at line 255, six lines later than
+in a text mode such as MODE 6. It is a 40-column mode, so main RAM is not contended. The redirect happens in the visible part of the second-to-last line:
 
 - **Arming.** The line-7 blocks count rows down (`rows`, set by the builder). The one
   that brings the count to zero patches one chosen block's `lda #<next` / `sta VRET` to
@@ -286,8 +312,8 @@ switch. Hence two schedules:
 | FPGA ULA (`sched` = 0, comma) | u = t µs into the line | when u ≤ 1 |
 | real ULA (`sched` = 8, full stop; the default) | u = t + 1 (0 when t = 0) | when u ≤ 1 |
 
-`setup_frame` indexes the dispatch tables (`VS1_BY_X`, `VSP_BY_X`, `VS2_BY_X`,
-`VA_BY_X`, `VC_BY_X`) by `(wx & 7) | sched`.
+`setup_frame` indexes the dispatch tables (`VSP_BY_X`, `VS2_BY_X`, `VA_BY_X`,
+`VC_BY_X`) by `(wx & 7) | sched`.
 
 **Why mode 7, not MODE 5.** With the real chip's 8 µs lead-in, a line takes eight
 40-column steps. On the row that starts at &7FC0, the eighth step crosses &8000. MODE 5
@@ -368,10 +394,11 @@ slots.
 - the first pair's bytes and the next pair's;
 - the entry tail, the first block, and the exit block.
 
-That takes about 950 cycles where the snippet builder took about 3,560. Most of the
-2,600 cycles saved now go to the vertical step's stores (5.3). The rest, 440, are kept
-as a delay (`CAL_SPARE`), so the lock read stays where it was. They're free for a
-game's fixed-length work.
+That takes 960 cycles where the snippet builder took about 3,560. It runs above the
+window it sets up, in the free time after the lock (3.1). It touches no main RAM, and
+its paths take the same time with no 1 MHz access on them: `addrow` keeps its
+intermediate in a variable, not on the stack, because a 1 MHz access's length depends
+on its cycle's phase, which would differ between paths.
 
 **Commit timing.** The rule is **at most 2 columns a commit, commits at least 2 fields
 apart**, so a field is ahead, behind or idle, never two at once. Together with the
@@ -494,28 +521,31 @@ The 55-wide sibling at character 16 needs no such rule.
 From the exit at line 200 to the next lock at line 0 there are 113 lines, 14,464
 cycles, in two parts.
 
-**Variable length**, which must end before line 249 (worst seen: line 244):
+**Variable length**, which must end before line 255 (worst seen: line 223):
 - the field parity; the schedule keys (comma, full stop);
 - the keyboard (`kbd.s`, from main RAM);
 - the trajectory (`logic.s`);
 - the vertical step's plan (`vstep`, `nprep`; section 5.3).
 
-Then the program polls for display end, which the ULA flags at line 249 after a text
-mode. The poll absorbs all the variation, so this part needs no cycle counting.
+Then the program polls for display end, which the ULA flags at line 255 in MODE 4 (a
+graphics mode: in MODE 6, a text mode, it would be line 249). The poll absorbs all the
+variation, so this part needs no cycle counting.
 
 **Fixed length**, every path padded to the same time:
 - **The vertical step's stores** (`nstore`), the same in every field.
 - **The column step.** A commit, shown next field: `colop` for the ahead column, then
   `mx` and `wx` move. The behind field of a 2-column step: `colop` for its first
   column, hidden lines only, then `mx` moves. An idle field: an equivalent delay.
-- **The strip** for the next field (`build`).
+- **Spare time** (`CAL_SPARE`): a delay real fixed work can replace.
 - **The next field's display parameters** (`setup_frame`, `ula_apply`).
 - **A counted delay** (`frame_tail`) to the lock read: `CAL_N64` passes of 64 cycles,
   two more in the 313-line field, and `CAL_REM`.
 
-The fixed part is about 7,880 cycles from display end to `ula_apply`. Of those, 440
-are spare delay (`CAL_SPARE`, section 5.1): real fixed work can replace them. The counted delay after it is at its minimum (`CAL_N64` = 1, `CAL_REM` =
-10).
+The fixed part is about 7,130 cycles from display end to `ula_apply`. Of those, 700
+are spare delay (`CAL_SPARE`). The counted delay after it is at its minimum (`CAL_N64` =
+1, `CAL_REM` = 10). The paths are balanced to within about ±10 cycles: colop's
+main-RAM stores are 1 MHz accesses whose lengths depend on their phase. The lock
+absorbs that.
 
 **The commit pipeline.** `logic` chooses a commit (`hnew`) two fields ahead of its
 display: hnew → cnext2 → cnext. A commit chosen in field N:
@@ -527,11 +557,11 @@ display: hnew → cnext2 → cnext. A commit chosen in field N:
 the field once, from the RTC event's position relative to display end, and the
 parity (`fpar`) simply alternates after that.
 
-**Budget.** The variable part has about 6,200 cycles before display end. Measured on
-the six fingerprint trajectories, it uses 600–1,300 cycles in a field without a
-vertical step and 2,000–2,900 in one with a step. The plan's ~1,400 cycles plus the
-keyboard and trajectory leave about 3,300 for a game in the worst field. Before the
-split, a field with a step used 3,800–5,200.
+**Budget.** The variable part has about 7,000 cycles before display end at line 255.
+Measured on the six fingerprint trajectories, it uses 600–1,300 cycles in a field
+without a vertical step and 2,000–2,900 in one with a step. That leaves about 4,000 for
+a game in the worst field. Add the free time above the window (2,595 cycles, 3.1) and
+the spare delay below it (700).
 
 ---
 
@@ -546,13 +576,15 @@ is balanced. The rules the source follows:
 - **No page crossings where timing matters.**
   - A branch that crosses a page when taken costs a cycle, and so does an indexed load
     whose index carries into the next page.
-  - Loop 1, the window's variant set (with VX), the line blocks' slots, the tails and
-    the delay loop each sit in a page, or the source asserts the constraint they need.
+  - The window's variant set (with VX), the line blocks' slots, the tails, the
+    vertical step's stores and the delay loop each sit in a page, or the source
+    asserts the constraint they need.
   - Every table indexed in the fixed work is asserted not to straddle a page over its
     index range (`NOCROSS`).
   - Every `jmp (vector)` is asserted clear of the 6502's &xxFF bug (`NOWRAP`).
-  - `tools/pagecheck.py BUILD` lists every branch that crosses a page. Today they are
-    all in the variable work, where crossings don't matter.
+  - `tools/pagecheck.py BUILD` lists every branch that crosses a page. Today the only
+    one is in the variable work, where crossings don't matter. When a change moves the
+    fixed work's code, the cheapest fix has been to reorder CODE's files (section 8).
 - **Equal paths.** Each branch in the fixed work is balanced: by `nop`s, by storing to
   the dummy page instead of skipping a store (`SELP`, `PUTCM`), or by padding a whole
   path (`CAL_CP`, `CAL_CM`, `CAL_BP`, `CAL_BEH`, `CAL_NOC*` in cal.inc). The builder's
@@ -590,7 +622,7 @@ The soak reports the lock read (the first of the two) at h 312–616 of line 0, 
 | File | Segment(s) | What |
 |---|---|---|
 | `elkscroll.s` | – | the root: includes everything in the order that fixes the layout |
-| `raster.s` | DLOOP, ENTRY, LOOP (+ LOOP2, VARIANTS, SNIPS) | the lock, loop 1, the palette line; includes the window's generated code |
+| `raster.s` | DLOOP, ENTRY, LOOP (+ LOOP2, VARIANTS) | the lock, the free time above the window, the palette line; includes the window's generated code |
 | `gen_loop2.s` (generated) | LOOP2, TABLES3 | the window: gadgets gA/gB and the sixteen line blocks |
 | `init.s` | VCODE, TAILS | start-up, `first_picture`, `boot_sync` |
 | `frame.s` | CODE, TAILS | the bottom of the frame, `frame_tail` |
@@ -604,11 +636,11 @@ The soak reports the lock read (the first of the two) at h 312–616 of line 0, 
 | `kbd.s` | KBDCODE (main RAM, &0900) | the keyboard scan |
 | `loader.s` | LOADER (&2000) | finds a sideways RAM bank, copies, starts |
 
-CODE holds only fixed-length work, in an order (colop, strip, display, frame) where no
+CODE holds only fixed-length work, in an order (colop, strip, frame, display) where no
 branch on a fixed path crosses a page (`tools/pagecheck.py`). VCODE holds the
 variable-length work, where crossings don't matter.
 
-Memory: the sideways RAM image fills &8000–&ACC7 of the bank (about 11.2K of 16K). Main RAM holds the
+Memory: the sideways RAM image fills &8000–&ACC3 of the bank (about 11.2K of 16K). Main RAM holds the
 screen ring (&3000–&7FFF), the dummy page (&2400), the keyboard routine (&0900) and
 its result (&0A00–&0A02), and the stack.
 
@@ -639,16 +671,19 @@ it into the Electron counterpart of beebgame, a game would replace or add:
   - A sprite over the entering or leaving column on a raced line needs care: the strip
     overwrites those cells as the beam passes. Draw sprites after the commit field's
     window, or keep them a column inside the edges.
-  - The variable-length part before display end is where game logic and sprite work
-    fit: about 6,200 cycles less the vertical step's plan and the trajectory, about
-    3,300 in the worst field (section 6).
+  - Game logic and sprite work fit in three places: the variable-length part before
+    display end (about 7,000 cycles less the vertical step's plan and the trajectory,
+    about 4,000 in the worst field: section 6); the free time above the window (2,595
+    cycles, fixed length, main RAM at 1 MHz: section 3.1); and the spare delay below it
+    (700, fixed length).
 - **Speed.** As it stands the engine holds the CPU from line 0 to line 200 for the
   scanline loop. A game would run its logic in the bottom of the frame, or at a lower
   frame rate. An experimental port of Cleo onto an earlier version of this engine ran
   its game logic at 6–8 frames a second this way.
 - **Integration points.**
   - The line blocks have spare cycles (each is `BLK_LEN` long and does up to about
-    40), and the bottom of the frame has 440 (`CAL_SPARE`). X must keep the
+    40). The fixed-length time is the delays `CAL_TA`, `CAL_TB`, `CAL_TC` (above the
+    window) and `CAL_SPARE` (below it). X must keep the
     blip value through the window.
   - Everything from the blip to the variant's write must stay exactly as listed in
     section 3.2.
@@ -679,9 +714,9 @@ MODE 1/5 show those four, and MODE 0/3/4/6 and mode value 7 show 0 and 8. Hence:
   (section 7: no fixed-path branch may cross a page).
 - The palette line and the exit (VX) black out the window with &FE08/&FE09 exactly as
   in MODE 1.
-- **Only the window's lines are MODE 2.** The lines above it stay MODE 1. They show the
-  look-ahead rows and the band, which are not black, and a MODE 2 line would show them
-  through the six fixed registers.
+- **Only the window's lines are MODE 2.** The lines above it and below it are the same
+  as in a MODE 1 build (2.1): MODE 1 or 3 on lines 0 and 1, MODE 4 or 6 elsewhere, all
+  of which show only colours 0 and 8, black outside the window.
 
 **What the mode changes.**
 
@@ -690,14 +725,11 @@ MODE 1/5 show those four, and MODE 0/3/4/6 and mode value 7 show 0 and 8. Hence:
 | the window's mode `MW`: the gadgets' and the palette line's MODE 1 write | M1 | M2 |
 | the lead-in mode in the window (`VC_BY_X`: the gadgets, the palette line's `sty`) | M7 / M1 | M7 / M2 |
 | the blip in the window (`VA_BY_X`, X in loop 2) | M5 / M1 | M5 / M2 |
-| above the window: the lead-in mode (`VC1_BY_X` into `DSNV`) and the blip (`VA1_BY_X` into `va1`, `vap`) | the same values | MODE 1's |
 | the block's black left pixel (`LMASK`: `PMASK`, `PEM`, `POM`) | &77 | &55 |
 | &FE0A–&FE0F | &FF | the MODE 2 palette |
 
-`setup_frame` patches the above-window values separately in both builds. That costs 12
-cycles, taken back from the spare delay (`CAL_SPARE`). A MODE 1 build's timing is identical to that
-before MODE 2 was added: every write, the fixed work and the lock read, on six
-fingerprinted trajectories.
+When MODE 2 was added, a MODE 1 build's timing stayed identical to that before: every
+write, the fixed work and the lock read, on six fingerprinted trajectories.
 
 **The test card: the Amstrad CPC's palette.** The CPC's 27 colours have each of red,
 green and blue off, half or full. Each is the average of two of the Electron's eight

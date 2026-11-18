@@ -7,22 +7,21 @@
 ; field.  docs/DESIGN.md section 7 describes the procedure.
 
 ; ---- the top of the frame (raster.s) ----
-CAL_L2    = 66      ; between the two lock reads: the second lands mid line 1
-CAL_PRE   = 98      ; lock -> the first iteration (entered at S - 3 us)
-CAL_PREP  = 2       ; extra, when the first iteration is the palette line's
+CAL_L2    = 72      ; between the two lock reads: the second lands mid line 1
+CAL_TA    = 1042    ; free time above the window (LDELAYs), from line 1 to the write on
+CAL_TB    = 318     ; line 9; after the strip build (960 cycles) to the write on line 19;
+CAL_TC    = 1235    ; and to the palette line: 2,595 in all, for fixed-length work
 
 ; ---- the fixed-length work below the window (frame.s): every path the same length ----
-CAL_CP    = 32      ; a commit going right: pad (the directions' edge rows differ)
-CAL_CM    = 20      ; a commit going left
+CAL_CP    = 31      ; a commit going right: pad (the directions' edge rows differ)
+CAL_CM    = 19      ; a commit going left
 CAL_BP    = 11      ; the behind field going right: pad (left is the longer)
-CAL_BEH   = 62      ; the behind path, after its edge rows (LDELAY)
+CAL_BEH   = 60      ; the behind path, after its edge rows (LDELAY)
 CAL_NOC1  = 1200    ; an idle field, in place of the edge rows (four LDELAYs)
 CAL_NOC2  = 1200
 CAL_NOC3  = 1200
-CAL_NOC   = 248
-CAL_SPARE = 440     ; strip.s: the fixed work's spare time, as delay: the builder's saving
-                    ; (2,604 cycles), less 12 for setup_frame's tables for the lines above
-                    ; the window and 1,657 for the vertical step's stores (nstore); at most 1,296
+CAL_NOC   = 246
+CAL_SPARE = 700     ; frame.s: the fixed work's spare time, as delay (at most 1,296)
 
 ; ---- the delay to the next lock (frame_tail): CAL_N64 (+2 in the 313-line field)
 ; passes of 64 cycles and CAL_REM, after the fixed work ----

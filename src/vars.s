@@ -5,9 +5,7 @@
 	.segment "VARS"
 	.align	256
 ; ---- the scanline loop's parameters for the next field (setup_frame, build) ----
-VVEC1:	.res	2			; the lead-in variant, for loop 1 and the palette line
-VVECP:	.res	2
-	NOWRAP	VVEC1
+VVECP:	.res	2			; the palette line's lead-in variant
 	NOWRAP	VVECP
 k0:	.res	1			; the first window line's line within its row
 VRET:	.res	2			; loop 2: the next line's block (set by each block)
@@ -25,13 +23,10 @@ rows:	.res	1			; line-7 blocks until the exit is armed
 hkprev:	.res	1			; the block (8 parity + line) whose hook the exit patched last field
 cin0:	.res	2			; strip.s: the first row's entering and leaving cells
 cout0:	.res	2
-n1:	.res	1			; loop 1's iterations (lines above the palette line's)
-cnt1:	.res	1			; (its counter)
-vcv:	.res	1			; the lead-in mode value (loop 1, the palette line)
+vcv:	.res	1			; the lead-in mode value (the palette line)
 tv:	.res	1			; t, the lead-in in characters
 cb8:	.res	2			; 8 x the window's first fetched column
-band_n:	.res	1			; lines from line 0 to the first iteration
-topmode: .res	1			; line 0's mode
+topmode: .res	1			; the mode of lines 0 and 1
 fe02v:	.res	1			; the screen start registers' values
 fe03v:	.res	1
 
@@ -97,6 +92,8 @@ NTO:	.res	20			; lines 1, 3, 5
 NT7:	.res	20			; line 7
 	NOCROSS	NBL, 10
 	NOCROSS	NTE, 60
+
+art:	.res	1			; addrow's low byte, while it works out the high
 
 ; ---- the cell writers (PUTCC, PUTCM) ----
 plo:	.res	1			; the cell's address

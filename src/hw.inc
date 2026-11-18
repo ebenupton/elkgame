@@ -11,7 +11,7 @@ ULA_MODE	= $FE07		; display mode (bits 3..5): takes effect mid-line
 ULA_PAL8	= $FE08		; palette (MODE 1: logical colours 0..3, two registers)
 ULA_PAL9	= $FE09
 
-DE_BIT		= $04		; ULA_STAT: display end (line 249 after a text mode, 255 after graphics)
+DE_BIT		= $04		; ULA_STAT: display end (line 255 in a graphics mode, 249 in a text one)
 RTC_BIT		= $08		; ULA_STAT: the "real-time clock" event (line 99, once a field)
 
 ; ---- main RAM -------------------------------------------------------------------------

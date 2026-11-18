@@ -32,15 +32,12 @@ MLINE:	.repeat	4, m
 	NOCROSS	MLINE, 72
 
 ; ---- the next field's band (setup_frame), by f = ((Y0 - wy) & 7) / 2: the number of
-; text rows above the window ----
-BAND_N:	.byte	1, 8, 18, 28		; lines from line 0 to the first iteration's
-N1TAB:	.byte	27, 20, 10, 0		; iterations of loop 1 (lines above the palette line's)
-TOPMODE: .byte	M1, M3, M3, M3		; the mode of line 0 (a 20K mode: the lock reads stall)
-F10M:	.byte	<(0-Y0+2560), <(10-Y0+2560), <(20-Y0+2560), <(30-Y0+2560)	; 10 f - Y0 (mod 2560)
-F10MH:	.byte	>(0-Y0+2560), >(10-Y0+2560), >(20-Y0+2560), >(30-Y0+2560)
-F640L:	.byte	<0, <640, <1280, <1920	; 640 f: the text rows' bytes
-F640H:	.byte	>0, >640, >1280, >1920
-	NOCROSS	BAND_N, 4*7
+; text rows at the top of the frame (raster.s) ----
+TOPMODE: .byte	M1, M3, M3, M3		; lines 0 and 1 (20K modes: the lock reads stall)
+TOP2:	.byte	M4, M6, M6, M6		; from line 1 (40 columns: the CPU uncontended)
+W9TAB:	.byte	M4, M4, M6, M6		; line 9: the band's end when f = 1
+W19TAB:	.byte	M4, M4, M4, M6		; line 19: the band's end when f = 2
+	NOCROSS	TOPMODE, 4*4
 
 ; ---- a column step's edge rows (colop), by direction (0 right, 1 left) ----
 XINL:	.byte	<WIN_W, <(2560-1)	; the entering column, from mx
