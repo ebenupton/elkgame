@@ -148,6 +148,6 @@ bfin:	lda	wy			; the top row's snippet: 0 or 1
 	lda	#>SN0
 	sta	sptr+1
 	lda	#Y1-1-Y0
-	sta	rtst+1
+	sta	lcnt
 	rts
 

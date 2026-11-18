@@ -4,8 +4,6 @@
 
 	.segment "VARS"
 	.align	256
-RTCLOG:	.res	256			; a status sample per window line (raster.s); page-aligned:
-					; the store's operand low byte is the loop counter
 VBUF:	.res	8*NSNIP			; each snippet's eight bytes: the entering column's
 	NOCROSS	VBUF, 8*NSNIP
 
@@ -18,6 +16,7 @@ VVEC2:	.res	2
 	NOWRAP	VVEC1
 	NOWRAP	VVECP
 	NOWRAP	VVEC2
+lcnt:	.res	1			; loop 2's iterations left
 k0:	.res	1			; X at the first window line: its line within its row
 n1:	.res	1			; loop 1's iterations (lines above the palette line's)
 cnt1:	.res	1			; (its counter)

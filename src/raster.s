@@ -112,9 +112,9 @@ back2:	inx
 	lda	sptr+1
 	adc	#0
 	sta	sptr+1
-rtc:	lda	ULA_STAT		; a status sample each line, kept in RTCLOG (a record for
-rtst:	sta	RTCLOG			; debugging; the operand's low byte is the loop counter:
-	dec	rtst+1			; the iterations left, 169..1)
+rtc:	lda	ULA_STAT		; (an I/O read: kept for its 1 MHz timing)
+	PADN	4
+	dec	lcnt			; the iterations left, 169..1
 	bne	wl2
 	; iteration Y1-1: the snippet once more (line Y1-1's bytes, behind the beam), whose
 	; variant is VX: black, and MODE 6 for the rest of the field (a text mode, so no
