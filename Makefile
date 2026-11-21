@@ -14,7 +14,9 @@
 #   SEED                 the random walk's seed
 #   MOTION=1             moving from the start (else SPACE starts and stops it)
 #   SCHED=0              boot into the FPGA ULA's lead-in schedule (default 8: the real ULA's)
-#   SCRMODE=2            the MODE 2 window (16 colours, 114 x 170 pixels; gen.py)
+#   LOCK1=1              lock with one read, in line 0: a line (128 cycles) more free time
+#                        above the window, about half the lock's margin (DESIGN.md 3.1)
+#   SCRMODE=2            the MODE 2 window (16 colours, 112 x 170 pixels; gen.py)
 # e.g.  make BUILD=build/rw TRAJ=1 SEED=4321
 #
 # BUILD may be any directory; tools need python3, ca65 and ld65 (cc65), and for the
@@ -27,7 +29,7 @@ SCRMODE ?= 1
 CA65    ?= ca65
 LD65    ?= ld65
 
-DEFINES := $(foreach v,START_WX START_WY TRAJ SEED MOTION SCHED,$(if $($(v)),-D $(v)=$($(v))))
+DEFINES := $(foreach v,START_WX START_WY TRAJ SEED MOTION SCHED LOCK1,$(if $($(v)),-D $(v)=$($(v))))
 
 SRC     := $(wildcard src/*.s src/*.inc)
 EMUBUILD ?= build-emu

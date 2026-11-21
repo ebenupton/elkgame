@@ -213,7 +213,7 @@ boot_sync:
 	lda	fpar
 	asl	a
 	clc
-	adc	#CAL_BN64
+	adc	#CAL_BN64		; (the same with LOCK1: this read already lands mid line 0)
 	tax
 bootd:	DELAY	59
 	dex

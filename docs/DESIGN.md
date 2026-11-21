@@ -162,6 +162,20 @@ work below the window may be off by about **±20 µs** with every field still
 pixel-exact, so the fixed work need not be counted to the cycle. Its measured spread
 is about 12 µs (section 7).
 
+**One read (`LOCK1=1`).** A read issued anywhere in line 0's fetches, h 0 to S (about
+h 648), already stalls to S; the second read only extends the late side. Across the
+soak the lock read is issued at h 344–680 of line 0, a spread of about 21 µs, so a
+single read aimed 24 cycles (12 µs) sooner (`CAL_L1S`, taken from `CAL_SPARE`) lands
+at h 152–488, inside line 0's fetches with about 10 µs to spare on either side. The
+counted code then starts at S of line 0, a line sooner: the switch to MODE 4 (or 6) is
+on line 0 instead of line 1, and `CAL_TA` is 128 cycles longer, so every write from
+line 9 down is where the two-read lock puts it and the free time above the window is
+2,685 cycles. `boot_sync`'s read already lands mid line 0 (h 312) and is unchanged.
+The cost is the margin: about ±10 µs, against −21/+26 µs with two reads, on one CPU/
+video phase in the emulator. Too early is the worse failure: a read issued before line
+0's fetches returns at once, and every later field's read arrives too early as well.
+The two-read lock stays the default.
+
 **Above the window: free time.** Just after the lock the mode goes to MODE 4 (or MODE 6
 in a band). In a 40-column mode the ULA fetches without holding up the CPU: a main-RAM
 access is an ordinary 1 MHz one. The lines down to the palette line need no per-line
@@ -170,7 +184,7 @@ between is free for fixed-length work:
 
 | from | to | what | cycles |
 |---|---|---|---|
-| line 1, S + 3 µs | line 9, S + 17 µs | `CAL_TA` (delay) | 1,042 |
+| line 1, S + 3 µs | line 9, S + 17 µs | `CAL_TA` (delay) | 1,042 (`LOCK1`: from line 0, 1,170) |
 | line 9 | line 19, S + 17 µs | the strip build for this field's window (`build`, 5.1), then `CAL_TB` | 998 + 280 |
 | line 19 | the palette line | `CAL_TC` | 1,235 |
 
@@ -697,6 +711,7 @@ Build options (`make NAME=VALUE`; defaults in init.s):
 | `MOTION` | 0 | 1: moving from the start (else SPACE starts it) |
 | `SCHED` | 8 | the schedule at start: 8 real ULA, 0 FPGA |
 | `SCRMODE` | 1 | the window's screen mode: 1 or 2 (section 10; `gen.py`, not the assembler) |
+| `LOCK1` | 0 | 1: lock with one read, in line 0 (3.1): a line more free time, about half the margin (default in `cal.inc`) |
 
 ---
 

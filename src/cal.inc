@@ -7,7 +7,11 @@
 ; field.  docs/DESIGN.md section 7 describes the procedure.
 
 ; ---- the top of the frame (raster.s) ----
+	.ifndef	LOCK1
+LOCK1 = 0           ; 1 (make LOCK1=1): lock with one read, in line 0 (DESIGN.md 3.1); 0: two
+	.endif
 CAL_L2    = 72      ; between the two lock reads: the second lands mid line 1
+CAL_L1S   = 24      ; LOCK1: the single read this much sooner, inside line 0's fetches
 CAL_TA    = 1042    ; free time above the window (LDELAYs), from line 1 to the write on
 CAL_TB    = 280     ; line 9; after the strip build (998 cycles, with the leak byte's 38) to the write on line 19;
 CAL_TC    = 1235    ; and to the palette line: 2,557 in all, for fixed-length work

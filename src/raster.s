@@ -47,12 +47,17 @@ entry:	jmp	init			; &8000, from the loader, with A = this bank's number
 ;   +23+u  the window's mode (the variant, gen_variants.s; none when u = 0)
 	.segment "LOOP"
 frame_top:
+	.if	LOCK1
+	lda	SYNCB			; the lock: issued inside line 0's fetches, stalls until S
+					; of line 0 (LOCK1: the counted code starts a line sooner)
+	.else
 	lda	SYNCB			; stalls until S of line 0 -- or, issued late (after
 	DELAY	CAL_L2			; line 0's last fetch), returns at once
 	lda	SYNCB			; the lock: stalls until S of line 1 either way
+	.endif
 ftop:	lda	#M4			; patched (setup_frame): M4, or M6 in a band
-	sta	ULA_MODE		; line 1, S + 3 us: uncontended from here to the window
-	LDELAY	CAL_TA			; (free)
+	sta	ULA_MODE		; line 1 (LOCK1: line 0), S + 3 us: uncontended from here
+	LDELAY	CAL_TA + LOCK1 * 128	; (free; LOCK1: a line more)
 fw9:	lda	#M4			; patched: M4, or M6 if the band runs on past line 9
 	sta	ULA_MODE		; line 9, S + 17 us
 	jsr	build			; the strip for this field's window (strip.s)
