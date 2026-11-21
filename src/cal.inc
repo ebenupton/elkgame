@@ -9,8 +9,8 @@
 ; ---- the top of the frame (raster.s) ----
 CAL_L2    = 72      ; between the two lock reads: the second lands mid line 1
 CAL_TA    = 1042    ; free time above the window (LDELAYs), from line 1 to the write on
-CAL_TB    = 318     ; line 9; after the strip build (960 cycles) to the write on line 19;
-CAL_TC    = 1235    ; and to the palette line: 2,595 in all, for fixed-length work
+CAL_TB    = 280     ; line 9; after the strip build (998 cycles, with the leak byte's 38) to the write on line 19;
+CAL_TC    = 1235    ; and to the palette line: 2,557 in all, for fixed-length work
 
 ; ---- the fixed-length work below the window (frame.s): every path the same length ----
 CAL_CP    = 31      ; a commit going right: pad (the directions' edge rows differ)

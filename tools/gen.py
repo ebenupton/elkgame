@@ -40,9 +40,11 @@ import swatch35  # noqa: E402
 Y0 = 30            # first window scanline (the text-mode band above it is at most 30 lines)
 Y1 = 200           # first scanline below the window (MODE 4 from here to the field's end)
 H = Y1 - Y0        # window height in scanlines
-WIN_C = 15         # screen character (MODE 1, 0..79) of the window's left edge: the
-                   # longest lead-in (8 us on the real ULA) must end before it
-WIN_W = 57         # window width in characters.  WIN_C + WIN_W <= 72, so the cells a
+WIN_C = 16         # screen character (MODE 1, 0..79) of the window's left edge.  The
+                   # longest lead-in (8 us on the real ULA) ends with a write to &FE07
+                   # whose video slot shows RAM[&7E07], not its own byte (DESIGN.md 4.5):
+                   # at character 15 that slot was the window's first character
+WIN_W = 56         # window width in characters.  WIN_C + WIN_W <= 72, so the cells a
                    # coarse step exposes are the 72-character ring row's gap cells
 assert WIN_C >= 14 and WIN_C + WIN_W <= 72 and WIN_W <= 61
 MAPW = 2560        # map period, in characters across and in scanlines down
@@ -391,6 +393,11 @@ def gen_loop2():
         ('B', 3): (['\tldy\tVNX', '\tlda\tPO,y', '\tand\tpmask', '\tsta\tVON'],
                    C['ldy'] + C['ldaY'] + C['and'] + C['sta']),
         ('B', 4): hi_slice('B', 4, 6),
+        # the next A row's line 7 is 0 if its entering cell holds the leak byte (&7E07,
+        # DESIGN.md 4.5): tA6 then loads ZB (= VO - 1, always 0), not VO
+        ('B', 5): (['\tlda\tgA+2', '\teor\t#>LEAKCELL', '\tora\tgA+1', '\tcmp\t#1',
+                    '\tlda\t#<(VO-1)', '\tadc\t#0', '\tsta\ttA6+1'],
+                   C['lda'] + 2 + 4 + C['cmp#'] + C['lda#'] + C['adc#'] + C['sta']),
         ('B', 6): (['\tldy\tbq', '\tlda\tMOD160+1,y', '\tsta\tbq'],
                    C['ldy'] + C['ldaY'] + C['sta']),    # the next pair's block row
     }
@@ -402,7 +409,8 @@ def gen_loop2():
             return '#0'                                 # an odd row's line 7: the grid
         return 'VE' if (k + 1) % 2 == 0 else 'VO'
 
-    L = [HEADER, '\t.segment "LOOP2"', '\t.assert\t<* = 0, error, "loop 2 must start a page"']
+    L = [HEADER, '\t.segment "LOOP2"', '\t.assert\t<* = 0, error, "loop 2 must start a page"',
+         '\t.assert\t<LEAKCELL = 0, error, "the B5 slice compares only the leak cell\'s high byte"']
     for P in ('A', 'B'):
         for k in range(8):
             nxt = f'b{P}{k + 1}' if k < 7 else f'b{other[P]}0'

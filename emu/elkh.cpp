@@ -42,6 +42,8 @@
 //                          stack, the key bytes and the dummy page; count sideways RAM
 //                          stores by address
 //   auditdump FILE         write the sideways RAM store counts; print the audit summary
+//                          (it also counts non-zero stores to the leak byte, &7E07, on
+//                          lines 29-199: DESIGN.md 4.5)
 //   race N                 N fields: every screen store against the same field's
 //                          display fetches of that byte (a histogram of the gap)
 //   swatch HEXADDR N       N fields: print every store to that sideways RAM address
@@ -129,6 +131,10 @@ struct Model {
 	}
 };
 
+// The byte a real ULA shows in the video slot of a mid-line &FE07 write (DESIGN.md 4.5):
+// the demo keeps it zero, so the soak expects black where the window fetches it.
+constexpr uint16_t kLeak = 0x7e07;
+
 int soak(elk::Machine &m, int nf, const std::string &model_path, const std::string &outp, unsigned wxa, unsigned gca) {
 	Model model;
 	if(!model.load(model_path)) { std::fprintf(stderr, "soak: cannot read the model %s\n", model_path.c_str()); return 1; }
@@ -152,7 +158,10 @@ int soak(elk::Machine &m, int nf, const std::string &model_path, const std::stri
 			for(int x = 0; x < 640; x++) {
 				if(in_rows && x >= x0 && x < x1) {
 					const int ppc = model.ppc(), sh = ppc == 2 ? 2 : 1;	// capture units a pixel: 2 or 4
-					if(c.pix[y][x] != model.colour((pwx * ppc + ((x - x0) >> sh)) % (2560 * ppc), (pwy + y - Y0) % 2560)) bad++;
+					// The leak byte (&7E07, DESIGN.md 4.5) is kept zero: black wherever it is shown.
+					const int want = c.addr[y][x >> 3] == kLeak ? 0
+						: model.colour((pwx * ppc + ((x - x0) >> sh)) % (2560 * ppc), (pwy + y - Y0) % 2560);
+					if(c.pix[y][x] != want) bad++;
 				} else if(c.pix[y][x]) outside++;
 			}
 		}
@@ -214,7 +223,7 @@ int soak(elk::Machine &m, int nf, const std::string &model_path, const std::stri
 // The audit: stores the demo should never make.
 struct Audit {
 	unsigned last_pc = 0;
-	long strays = 0;
+	long strays = 0, leaks = 0;
 	std::map<unsigned, std::pair<long, unsigned>> swram;	// address -> (count, first writer's PC)
 	bool on = false;
 	void start(elk::Machine &m) {
@@ -222,6 +231,12 @@ struct Audit {
 		elk::Machine *mp = &m;
 		m.opcode_hook = [this](uint16_t pc, uint8_t, uint8_t) { last_pc = pc; };
 		m.ram_write_hook = [this, mp](uint16_t a, uint8_t v) {
+			// the leak byte must be zero whenever a window line's &FE07 write can show it
+			// (the palette line, 29, to the last window line, 199; DESIGN.md 4.5)
+			const int line = int(mp->video_.v_count_);
+			if(a == kLeak && v && line >= 29 && line < 200) {
+				if(leaks++ < 40) std::printf("leak byte store %04x=%02x pc=%04x line=%d\n", unsigned(a), unsigned(v), last_pc, line);
+			}
 			// allowed: the screen ring, the stack, the key bytes (&0A00-&0A02), the dummy page (&2400)
 			if((a >= 0x3000 && a < 0x8000) || (a >= 0x100 && a < 0x200) || (a >= 0xa00 && a <= 0xa02) || (a >= 0x2400 && a <= 0x24ff)) return;
 			if(strays++ < 40) std::printf("stray main RAM store %04x=%02x pc=%04x line=%d\n", unsigned(a), unsigned(v), last_pc, int(mp->video_.v_count_));
@@ -237,7 +252,8 @@ struct Audit {
 			for(const auto &e : swram) std::fprintf(f, "%04x %ld %04x\n", e.first, e.second.first, e.second.second);
 			std::fclose(f);
 		}
-		std::printf("audit: %ld stray main RAM stores; %zu sideways RAM addresses written\n", strays, swram.size());
+		std::printf("audit: %ld stray main RAM stores, %ld non-zero leak byte stores in the window; %zu sideways RAM addresses written\n",
+			strays, leaks, swram.size());
 	}
 };
 

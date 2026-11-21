@@ -1,8 +1,8 @@
 # elkgame
 
 A large, smoothly scrolling playfield for the **Acorn Electron**, in 6502 assembler: a
-window 57 characters × 170 scanlines -- **228 × 170 pixels in MODE 1** (four colours)
-or **114 × 170 in MODE 2** (sixteen) -- that scrolls in both directions at **50 frames
+window 56 characters × 170 scanlines -- **224 × 170 pixels in MODE 1** (four colours)
+or **112 × 170 in MODE 2** (sixteen) -- that scrolls in both directions at **50 frames
 a second**, a character at a time across and two scanlines at a time down, on an
 Electron with **one bank of sideways RAM**.
 The Electron has no hardware scrolling finer than a character row and no raster
@@ -71,11 +71,16 @@ The engine was developed against Clock Signal's core corrected to match hoglet's
 ElectronFpga HDL, then against measurements from probe programs run on an issue 6
 Electron, which showed where the real ULA differs (the two schedules above).  It is
 checked in the emulator field by field, every window pixel against the pattern, on
-random trajectories and both ULA models. This build has passed 800,000 fields (its
-predecessors in this repository 4.8 million); the build it was imported from passed
-7.2 million, and a 55-wide sibling 31.2 million
-(`docs/VERIFICATION.md`).  **This build has not yet been run on a real Electron**;
-the probe discs it was derived from have.
+random trajectories and both ULA models. This build has passed 320,000 fields (its
+predecessors in this repository 5.6 million); the build it was imported from passed
+7.2 million, and a 55-wide sibling 31.2 million (`docs/VERIFICATION.md`).
+
+**On a real Electron** the 57- and 56-wide builds ran, and showed something no emulator models:
+a CPU write to the ULA during the display takes that video slot, which shows the RAM
+byte at the write's address with A15 dropped -- &7E07 for the mode register
+(`docs/DESIGN.md` 4.5).  Hence the window's move to character 16, 56 wide, and the one
+byte the demo keeps black: &7E07, wherever the map puts it.  The build with that fix
+has not yet been run on hardware.
 
 ## Building
 

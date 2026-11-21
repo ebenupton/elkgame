@@ -1,11 +1,11 @@
-; elkscroll.s -- a 228 x 170-pixel MODE 1 playfield that scrolls smoothly in both
+; elkscroll.s -- a 224 x 170-pixel MODE 1 playfield that scrolls smoothly in both
 ; directions at 50 Hz on an Acorn Electron with one bank of sideways RAM.
 ;
 ; This file is the assembly's root: it pulls in the configuration and every module in
 ; the order that fixes the binary's layout.  docs/DESIGN.md is the full account; in
 ; brief:
 ;
-; The window is 57 MODE 1 characters x 170 scanlines at screen character 15 and line
+; The window is 56 MODE 1 characters x 170 scanlines at screen character 16 and line
 ; 30, single-buffered, in the ULA's 20K screen ring (&3000-&7FFF) laid out as rows of
 ; 72 characters (576 bytes) -- not the 80 the ULA displays -- so that a coarse scroll
 ; is a change of screen start by 8 bytes and a vertical one by 576.

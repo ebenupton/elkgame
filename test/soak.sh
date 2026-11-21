@@ -34,7 +34,7 @@ while [ "$i" -lt $((O + R)) ]; do
 	i=$((i + 1))
 done | xargs -P "$J" -L 1 "$HERE/soak1.sh" | tee "$LOG"
 RUNS=$(grep -c . "$LOG")
-CLEAN=$(grep -c ' 0 bad, 0 unlocked, 0 late, 0 pad, 0 blip;.*| audit: 0 stray' "$LOG")
+CLEAN=$(grep -c ' 0 bad, 0 unlocked, 0 late, 0 pad, 0 blip;.*| audit: 0 stray main RAM stores, 0 non-zero leak' "$LOG")
 rm -f "$LOG"
 echo "soak: $CLEAN of $RUNS runs clean ($N fields each)"
 [ "$RUNS" = "$R" ] && [ "$CLEAN" = "$R" ]

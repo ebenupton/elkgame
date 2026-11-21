@@ -13,7 +13,7 @@ if(NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CLK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/clk)
+set(CLK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/clk CACHE PATH "the CLK fork (default: the submodule)")
 if(NOT EXISTS ${CLK_ROOT}/cmake/CLK_SOURCES.cmake)
 	message(FATAL_ERROR "emu/clk is empty: git submodule update --init emu/clk")
 endif()

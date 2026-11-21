@@ -8,6 +8,8 @@ ULA_SA_L	= $FE02		; screen start, address bits 6..8 (in bits 5..7)
 ULA_SA_H	= $FE03		; screen start, address bits 9..14 (in bits 0..5)
 ULA_PAGE	= $FE05		; ROM paging (bits 0..3), interrupt clears (bits 4..6)
 ULA_MODE	= $FE07		; display mode (bits 3..5): takes effect mid-line
+LEAK		= ULA_MODE & $7FFF	; the byte a mid-line ULA_MODE write shows in its slot on a
+LEAKCELL	= LEAK & $FFF8	; real ULA (DESIGN.md 4.5): kept zero, so it shows black
 ULA_PAL8	= $FE08		; palette (MODE 1: logical colours 0..3, two registers)
 ULA_PAL9	= $FE09
 

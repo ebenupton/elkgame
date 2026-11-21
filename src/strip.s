@@ -251,6 +251,22 @@ bld_cols:	lda	sxin+1			; the hash's block term
 	lda	HKBH,y
 	sta	armA2+2
 	sta	armB2+2
+	; the leak byte (LEAK, &7E07: DESIGN.md 4.5).  If gadget A's entering cell (at line
+	; k0 of the first row, or line 0 of the second) is the leak cell, its line 7 is 0: tA6
+	; loads ZB, not VO (the B5 block does the same for every later A row).  Then the
+	; byte itself: whatever colop, the notch or init wrote there, it is 0 for the window.
+	lda	gA+1
+	and	#$F8
+	sta	tmp
+	lda	gA+2
+	eor	#>LEAKCELL
+	ora	tmp
+	cmp	#1
+	lda	#<(VO-1)
+	adc	#0
+	sta	tA6+1
+	lda	#0
+	sta	LEAK
 	rts
 
 ; by 8 * parity (0: an even first row, gadget A first; 8: odd, B first)

@@ -1,10 +1,10 @@
 # elkgame: design of the scroll engine
 
-This document explains how the demo puts a 228 × 170-pixel MODE 1 window on an Acorn
+This document explains how the demo puts a 224 × 170-pixel MODE 1 window on an Acorn
 Electron and scrolls it at 50 Hz. It covers the display tricks first (sections 2–4),
 then how the picture is kept up to date as it moves (5), then the frame's timetable
 (6) and the timing discipline that holds it together (7). Section 9 says what a game
-built on the engine would add, and section 10 how the same engine shows a 114 × 170
+built on the engine would add, and section 10 how the same engine shows a 112 × 170
 MODE 2 window.
 
 The ULA behaviour everything depends on is set out, with sources, in
@@ -64,8 +64,8 @@ The engine works round all four:
 
 | | |
 |---|---|
-| size | 57 characters × 170 scanlines = 228 × 170 pixels |
-| position | screen character 15 (of 80) across; lines 30–199 |
+| size | 56 characters × 170 scanlines = 224 × 170 pixels |
+| position | screen character 16 (of 80) across; lines 30–199 |
 | above it | lines 0–29: black. Lines 0 and 1 are MODE 1 or MODE 3 (for the lock); the rest MODE 4, with 0–3 rows of 10-line text mode (MODE 6) at the top |
 | below it | lines 200–312: black, MODE 4 (display end at line 255) |
 | palette | black, cyan, magenta, yellow; set on line 29, blacked out at line 200 |
@@ -78,7 +78,7 @@ The engine works round all four:
 The ULA displays 80 characters a line, but the engine lays the 20K screen ring out
 (&3000–&7FFF, which the ULA wraps) as rows of **72 characters (576 bytes)**. Each
 displayed line therefore fetches only 72 to 79 characters before the next row begins,
-and a row's 72 cells hold the window's 57 and 15 gap cells, which are kept zero (black).
+and a row's 72 cells hold the window's 56 and 16 gap cells, which are kept zero (black).
 
 Why 72 and not 80:
 
@@ -274,8 +274,9 @@ characters before where it would have been. With t = 0..7 and the screen start i
 - t = (`WIN_C` − wx) & 7;
 - the screen start is at column wx − `WIN_C` + t, which is a multiple of 8.
 
-The window starts at character 15 because the longest lead-in (8 µs on the real ULA,
-section 4.3) must be over before the window's first pixel.
+The window starts at character 16 because the longest lead-in (8 µs on the real ULA,
+section 4.3) must be over before the window's first pixel, and its last write takes a
+video slot of its own (4.5).
 
 ### 4.2 Keeping the rows aligned: the blip and MODE 3
 
@@ -334,6 +335,44 @@ In the HDL simulation of the engine's 55-wide sibling, the FPGA schedule passed 
 14 of the 16 phases. The real schedule covered the other two, so between them the two
 schedules cover every phase (`VERIFICATION.md`).
 
+### 4.5 The leak byte: what a mid-line ULA write shows
+
+On a real ULA a CPU write to a ULA register while the ULA is fetching for the display
+takes that video slot: the slot's RAM cycle uses the CPU's address with A15 dropped,
+so instead of its own byte the slot shows **RAM[&7E00 + the register's address low
+byte]**, painted in the new mode. Reads seem not to: every window line reads &FE00 in
+mid-window, and nothing shows there. Neither the CLK fork nor the FPGA HDL models it
+(`ULA-NOTES.md` 15.4). It was found on hardware with this engine:
+
+- **The lead-in's last write** is the window's mode to &FE07, at t + 1 µs on the real
+  schedule. Its slot shows **RAM[&7E07]**. With t = 7 it lands at h 120, character
+  15: with the window at character 15 that was the window's first character, which
+  went black at one position in eight. So the window starts at **character 16**, and
+  is 56 wide (WIN_C + WIN_W ≤ 72, 5.4); every lead-in's last slot is in the margin.
+- **In the margin** the slot is a gap position, black by design, but it shows &7E07,
+  which is screen memory like the rest of the ring: map data, a different cell's line 7
+  as the window moves. Unless &7E07 is zero, a one- or two-pixel bar the height of the
+  window follows the lead-in's end, coloured by whatever the scroll last drew there.
+  The blip (&FE07 in the right margin when t ≤ 1) shows the same byte.
+- **The engine keeps &7E07 zero.** `build` stores 0 there every field, after `colop`,
+  the notch and `init`, which write only in the bottom of the frame. In the window the
+  only writer is the strip's even-row gadget: an even row's line 7 is `VO`, an odd
+  row's is 0. When gadget A's entering cell is &7E00, its line-7 tail (`tA6`) loads
+  `ZB`, a zero byte just below `VO`, instead: block B5 decides for each A row from the
+  address it has just prepared (the `('B', 5)` slice in `gen_loop2`), `build` for the
+  rows it sets up. So the test pattern has one black byte: line 7 of whichever map cell
+  is at &7E00. The soak expects it, and its audit counts non-zero stores to &7E07 on
+  lines 29–199 (`VERIFICATION.md`).
+- **Writes in the horizontal blanking** (MODE 3 at +9 µs, the lead-in mode at +15/+17,
+  the palette on line 29, the band's ends) have no slot to take.
+
+**For a game.** The ULA decodes A0–A3 in page &FE, so the mode register has sixteen
+addresses, &FE07 to &FEF7, which show &7E07 to &7EF7: line 7 of every other cell from
+&7E00 to &7EFF. A game whose map cannot spare a black byte at &7E07 could choose, each
+field, a mirror whose byte is zero (often a gap cell, or a black line), and fall back
+to zeroing one that is not on show; the remaining case, all sixteen on show and
+non-zero, needs the chosen byte zeroed for every line but its own.
+
 ---
 
 ## 5. Keeping the picture up to date
@@ -385,7 +424,8 @@ The preparation is striped across the row's eight line blocks:
 **The data.** The pattern needs only two bytes per colour pair (a block row, two
 character rows): `VE` for even lines and `VO` for odd. An odd map row's line 7 is
 always 0 (the grid line). So each block's tail loads `VE`, `VO`, `VEN` (the next row
-of a new pair) or #0. For a game these would become tile-data fetches in the same
+of a new pair) or #0 — or `ZB`, a zero, for an even row's line 7 when its entering cell
+holds the leak byte (4.5). For a game these would become tile-data fetches in the same
 slots.
 
 **What the builder does.** `build` no longer touches each row. It sets up:
@@ -498,21 +538,24 @@ Before the split, the whole drawing was variable work, 3,300–4,100 cycles. The
 one plan, so **at most 2 lines a field** (`DYMAX`, asserted). A second notch would need
 another 2,120 cycles of fixed work, which the bottom of the frame doesn't have.
 
-### 5.4 Why 57 characters, and the one-column rule
+### 5.4 Why 56 characters at 16, and the one-column rule
 
-The window's width and position are set by the behind column. Going right, a 2-column
-step's first entering column is stored a field early, in row y's cell at mx + W. Along
-the tape that is row y+1's cell mx − 15, its first gap cell:
+The position is set by the lead-in: its longest, 8 µs on the real ULA, must end before
+the window, and its last write takes a slot (4.5), so the window starts at character
+16. The width is then set by the behind column. Going right, a 2-column step's first
+entering column is stored a field early, in row y's cell at mx + W. Along the tape
+that is row y+1's cell mx + W − 72, its first gap cell:
 
-- **Width.** With a 58-character window the gap is only 14 cells, which the left
-  margin shows when t = 0, and the cell would be displayed in row y+1 in the early
-  field. 57 is the widest that avoids this.
-- **The rule at character 15.** At character 15 the margin can show all 15 gap
+- **Width.** The cell would be displayed in row y+1 in the early field if the margin
+  showed it, and with no lead-in the margin shows WIN_C cells. So WIN_C + WIN_W ≤ 72,
+  and 56 is the widest at character 16.
+- **The one-column rule.** At WIN_C + WIN_W = 72 the margin can show all 16 gap
   cells. So `logic` takes a 2-column step right as a single column whenever the field
   before the commit would have no lead-in. After that the lead-in's parity stays odd,
   so the rule costs at most one field, once.
 
-The 55-wide sibling at character 16 needs no such rule.
+(The research tree's 55-wide build at character 16 needed no such rule; the 57-wide
+one at character 15 had it, and lost its first character to the leak at t = 7.)
 
 ---
 
@@ -692,7 +735,7 @@ it into the Electron counterpart of beebgame, a game would replace or add:
 
 ## 10. The MODE 2 window (`SCRMODE=2`)
 
-The same engine shows a **114 × 170-pixel MODE 2 window**, with the same memory layout,
+The same engine shows a **112 × 170-pixel MODE 2 window**, with the same memory layout,
 timing and scrolling. It has sixteen logical colours, eight of them distinct on
 screen. MODE 0, 1 and 2 fetch identically: 80 bytes a line, one every half
 microsecond. So the ring, the lead-in, the blip, the strip and the notch all work on

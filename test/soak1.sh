@@ -28,6 +28,6 @@ S=$(grep '^soak:' "$B/soak.txt" | tail -1)
 A=$(grep '^audit:' "$B/soak.txt" | tail -1)
 echo "$NAME mode $SCRMODE $MODEL start $WX,$WY seed $SEED traj $TRAJ: ${S:-no result} | ${A:-no audit}"
 case "$S|$A" in
-	*" 0 bad, 0 unlocked, 0 late, 0 pad, 0 blip;"*"| audit: 0 stray"*) exit 0 ;;
+	*" 0 bad, 0 unlocked, 0 late, 0 pad, 0 blip;"*"| audit: 0 stray main RAM stores, 0 non-zero leak"*) exit 0 ;;
 	*) exit 1 ;;
 esac

@@ -102,6 +102,7 @@ not been simulated on the HDL.**
 | 6, MODE 2 | the window's screen mode a build option (`SCRMODE=2`: 114 × 170 pixels, sixteen colours, the CPC-palette test card); both demos built by default | MODE 1: timing identical to the build before (six fingerprints: every write, the fixed work and the lock read, in every field). Negative control: the MODE 2 program against the MODE 1 model fails 200 of 200 fields. Soak: 16 runs × 50,000 fields = 800,000, four runs each of MODE 1 and MODE 2 on each ULA model, all clean; lock read at h 344–664 |
 | 7, split notch | the vertical step as a plan (variable work, ~1,400 cycles) and constant-time stores after display end (`nstore`, ~2,120 cycles, every field) | six fingerprints: picture writes identical, fixed work +0. A field with a step: 2,000–2,900 cycles of variable work (was 3,800–5,200). Negative control (by accident): a wrong span-mask offset failed every field. Soak: 16 runs × 50,000 fields = 800,000, both modes on both ULA models, all clean |
 | 8, MODE 4 | lines 2–29 MODE 4 (MODE 6 in the band) instead of MODE 1/3: loop 1 gone, 2,595 cycles of free fixed-length time above the window, the strip build there; MODE 4 below the window, display end at line 255 | six fingerprints: every write from the palette line on identical (the window's exit's value aside), the lock read's spread as before (h 344–680). The strip build made constant (960 cycles: `addrow` off the stack). Soak: 16 runs × 50,000 fields = 800,000, both modes on both ULA models, all clean; variable work ended by line 223 |
+| 9, 56 wide; the leak byte | the window at character 16, 56 wide; &7E07 kept zero (DESIGN.md 4.5): `build` zeroes it every field and, with block B5, keeps the strip from writing it; the soak expects black there, and its audit counts non-zero stores to &7E07 on lines 29–199 | six fingerprints (four MODE 1, two MODE 2, both ULA models, 4,000 fields each): every &FExx access identical to the 56-wide build without the fix, 29.6 million in all (the strip build's 38 cycles taken from `CAL_TB`). Negative control: the same soak without the fix, 4 runs × 20,000 fields, fails all four (19–25% of fields wrong, 36–53 non-zero stores to &7E07 a run, all from gadget A's entering store). Soak: 16 runs × 20,000 fields = 320,000, both modes on both ULA models, all clean, no store to &7E07 in the window; variable work ended by line 223; lock read at h 344–680 |
 
 To run the soak yourself: `make emu`, put the ROMs in `roms/`, then
 `test/soak.sh -n 100000 -r 40`. With eight runs at once a run of 100,000 fields takes
@@ -109,10 +110,15 @@ about seven minutes.
 
 ## 5. What is not yet known
 
-- **This build has not run on a real Electron.** The probe discs it was derived from
-  have (probes 1–9, on an issue 6 machine with a Ferranti ULA), and so have earlier
-  scroll tests. The changes since the last hardware test are the mode 7 lead-in and
-  the two-read lock.
+- **This build has not run on a real Electron.** The 57- and 56-wide builds before it
+  have, on 21 November 2026, on the real ULA's schedule: the picture locked and
+  scrolled, and no misplaced line or character was reported, but a mid-line write to &FE07
+  showed RAM[&7E07] (DESIGN.md 4.5; `ULA-NOTES.md` 15.4), which this build keeps black.
+  The probe discs it was derived from also ran (probes 1–9, on an issue 6 machine with
+  a Ferranti ULA).
+- **The leak's details.** That the slot follows the write's address (a mirror such as
+  &FEF7 should show &7EF7), how many of the leaked byte's pixels show, and whether
+  writes to &FC and &FD pages take a slot too, are still to be tried.
 - **Mode 7's wrap to &3000** is taken from pastraiser.com's hardware notes. The probes
   confirmed the real ULA's address phase, but not this wrap.
 - **The CPU/video phase.** On an FPGA ULA it varies from power-up to power-up

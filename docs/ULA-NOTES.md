@@ -661,3 +661,36 @@ moved a window's lead-in through every schedule and photographed the result.
 - **The fix.** The engine now locks with two stalled reads (DESIGN.md 3.1) and pads its
   fixed work so that the lock read lands in the same place whatever the field did.
   This is the likely cause of what was seen, but not proven on hardware.
+
+### 15.4 A CPU write to the ULA takes the video slot (21 November 2026)
+
+- **What it is.** On a real Electron, a CPU write to a ULA register while the ULA is
+  fetching for the display takes that video slot: the byte shown there is the RAM byte
+  at the CPU's address with A15 dropped, **RAM[&7E00 + the address's low byte]** (for
+  &FE07, RAM[&7E07]), painted in the mode the write sets. The ULA decodes A0–A3 in
+  page &FE, so &FE07's mirrors &FE17 … &FEF7 show &7E17 … &7EF7.
+- **Reads.** Apparently not: every window line reads &FE00 in mid-window (character
+  ~44), and nothing shows there.
+- **Found with** the scroll demo on a real Electron, on the lead-in's last write
+  (the window's mode, DESIGN.md 4.5):
+  - at 57 wide on character 15, the window's first character went black at one
+    position in eight (t = 7, whose write lands on character 15);
+  - at 56 wide on character 16, a thin bar the height of the window, in the left
+    margin, at the lead-in's end: it moved two characters a column step (the end
+    moves 1 µs), went with t = 0, and its colour depended on the scroll's path and
+    position, not on the window's bytes;
+  - a debug build's keys: zeroing what the band above the window fetches cured it only
+    when &7E00 was in that area; writing &0F to &7E00–&7E07 turned the bar cyan, and
+    zeroing them removed it. The colours seen matched &7E07's contents in nine
+    emulated states, and nothing else.
+- **Not yet tested:** the bar should move to &7EF7 with the write at &FEF7
+  (`ELKALIAS56`); whether &FE01 or page &FF also reach the mode register; whether
+  writes to the expansion pages (&FC, &FD), which the ULA also stretches to 1 MHz,
+  take a slot (they would show &7Cxx, &7Dxx).
+- **The models.** The FPGA keeps CPU and video on separate ports of a dual-port RAM,
+  so it cannot show this, though its clock stretching treats &FC–&FE accesses exactly
+  like RAM accesses (`ram_access = '1' or io_access = '1'`, ElectronULA.vhd L1258).
+  CLK does not model it either; the demo keeps &7E07 zero and the soak checks it.
+- **It may bear on 15.1.** The probes' "real chip steps in the first half" was read
+  from where a mode write's switch showed; a write that takes its own slot would show
+  one character differently. The engine's schedules work either way.

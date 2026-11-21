@@ -14,8 +14,10 @@ VJ:	.res	2			; loop 2: the gadgets' jump: this field's variant, or VX
 	NOWRAP	VJ
 vav:	.res	1			; the blip's mode value (X through loop 2)
 VE:	.res	1			; the entering column's bytes for this colour pair:
+ZB:	.res	1			; (always 0: the tail tA6 loads it, not VO, for the leak cell's row)
 VO:	.res	1			;   even lines, odd lines (an odd row's line 7 is 0)
 VEN:	.res	1			; and for the next pair
+	.assert	>ZB = >VO, error, "ZB must share VO's page (the B5 slice patches tA6's low byte)"
 VON:	.res	1
 VNX:	.res	1			; the next pair's hash value
 bq:	.res	1			; this pair's block row (0..159)

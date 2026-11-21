@@ -153,7 +153,7 @@ logic:	dec	segl
 	lda	cnext2			; the rule: no commit in the field after another's
 	bne	@done
 	; A 2-column step right stores its second column a field early, in the cell that is
-	; the next ring row's first: with the window at character 15 that cell is on screen
+	; the next ring row's first: with WIN_C + WIN_W = 72 that cell is on screen
 	; when the early field has no lead-in.  Take one column then (the phase then stays
 	; odd: no cost after the first time).  DESIGN.md 5.4.
 	lda	tmp
