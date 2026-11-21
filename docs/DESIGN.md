@@ -171,10 +171,10 @@ between is free for fixed-length work:
 | from | to | what | cycles |
 |---|---|---|---|
 | line 1, S + 3 µs | line 9, S + 17 µs | `CAL_TA` (delay) | 1,042 |
-| line 9 | line 19, S + 17 µs | the strip build for this field's window (`build`, 5.1), then `CAL_TB` | 960 + 318 |
+| line 9 | line 19, S + 17 µs | the strip build for this field's window (`build`, 5.1), then `CAL_TB` | 998 + 280 |
 | line 19 | the palette line | `CAL_TC` | 1,235 |
 
-That is 2,595 cycles of delay a game can replace with its own fixed-length work, such
+That is 2,557 cycles of delay a game can replace with its own fixed-length work, such
 as sprite drawing, with main RAM at 1 MHz.
 
 ### 3.2 The loop
@@ -434,7 +434,7 @@ slots.
 - the first pair's bytes and the next pair's;
 - the entry tail, the first block, and the exit block.
 
-That takes 960 cycles where the snippet builder took about 3,560. It runs above the
+That takes 998 cycles (38 of them the leak byte's, 4.5) where the snippet builder took about 3,560. It runs above the
 window it sets up, in the free time after the lock (3.1). It touches no main RAM, and
 its paths take the same time with no 1 MHz access on them: `addrow` keeps its
 intermediate in a variable, not on the stack, because a 1 MHz access's length depends
@@ -603,7 +603,7 @@ parity (`fpar`) simply alternates after that.
 **Budget.** The variable part has about 7,000 cycles before display end at line 255.
 Measured on the six fingerprint trajectories, it uses 600–1,300 cycles in a field
 without a vertical step and 2,000–2,900 in one with a step. That leaves about 4,000 for
-a game in the worst field. Add the free time above the window (2,595 cycles, 3.1) and
+a game in the worst field. Add the free time above the window (2,557 cycles, 3.1) and
 the spare delay below it (700).
 
 ---
@@ -716,7 +716,7 @@ it into the Electron counterpart of beebgame, a game would replace or add:
     window, or keep them a column inside the edges.
   - Game logic and sprite work fit in three places: the variable-length part before
     display end (about 7,000 cycles less the vertical step's plan and the trajectory,
-    about 4,000 in the worst field: section 6); the free time above the window (2,595
+    about 4,000 in the worst field: section 6); the free time above the window (2,557
     cycles, fixed length, main RAM at 1 MHz: section 3.1); and the spare delay below it
     (700, fixed length).
 - **Speed.** As it stands the engine holds the CPU from line 0 to line 200 for the
