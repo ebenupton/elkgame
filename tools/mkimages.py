@@ -13,7 +13,7 @@ import os
 import struct
 import sys
 
-IMAGES = {'elkscroll': ('ELKSCRL', 'ELK SCROLL'), 'elkscroll2': ('ELKSCR2', 'ELK SCROLL 2')}
+IMAGES = {'elkscroll_mode1': ('ELKSCR1', 'ELK SCROLL 1'), 'elkscroll_mode2': ('ELKSCR2', 'ELK SCROLL 2')}
 NAME = 'ELKSCRL'
 LOAD = EXEC = 0x2000
 
@@ -88,7 +88,7 @@ def uef(data):
     return bytes(out)
 
 
-def main(binary, outdir, image='elkscroll'):
+def main(binary, outdir, image='elkscroll_mode1'):
     global NAME
     NAME, title = IMAGES[image]
     data = open(binary, 'rb').read()

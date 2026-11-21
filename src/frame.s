@@ -116,7 +116,7 @@ wk_pl:	bit	ULA_STAT		; marker
 	sta	cnext
 	lda	hnew
 	sta	cnext2
-	LDELAY	CAL_SPARE - LOCK1 * CAL_L1S	; spare time, kept as a delay so that the lock read
+	LDELAY	CAL_SPARE		; spare time, kept as a delay so that the lock read
 					; stays where it is (free for a game's fixed-length work)
 	bit	ULA_STAT		; marker
 	jsr	setup_frame

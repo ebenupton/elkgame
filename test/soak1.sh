@@ -15,7 +15,7 @@ NAME=$1 WX=$2 WY=$3 SEED=$4 TRAJ=$5 MODEL=$6 FIELDS=$7 SCRMODE=${8:-1}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ROMS=${ELK_ROMS:-$ROOT/roms}
 B=$ROOT/build/soak/$NAME
-make -s -C "$ROOT" BUILD="$B" START_WX="$WX" START_WY="$WY" SEED="$SEED" TRAJ="$TRAJ" SCRMODE="$SCRMODE" LOCK1="${LOCK1:-}" "$B/elkscroll" >/dev/null 2>&1 \
+make -s -C "$ROOT" BUILD="$B" START_WX="$WX" START_WY="$WY" SEED="$SEED" TRAJ="$TRAJ" SCRMODE="$SCRMODE" "$B/elkscroll" >/dev/null 2>&1 \
 	|| { echo "$NAME: build failed"; exit 1; }
 WXA=$(awk '$3==".wx"{print substr($2,3)}' "$B/elk.lbl")
 GCA=$(awk '$3==".gch"{print substr($2,3)}' "$B/elk.lbl")

@@ -16,7 +16,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ROMS=${ELK_ROMS:-$ROOT/roms}
 B=$ROOT/build/fp/$(basename "$OUT")
 if [ "$MODEL" = real ]; then PRE="realula 1" S=8; else PRE="" S=0; fi
-make -s -C "$ROOT" BUILD="$B" START_WX="$WX" START_WY="$WY" SEED="$SEED" TRAJ="$TRAJ" MOTION=1 SCHED=$S SCRMODE="${SCRMODE:-1}" LOCK1="${LOCK1:-}" "$B/elkscroll" >/dev/null 2>&1 \
+make -s -C "$ROOT" BUILD="$B" START_WX="$WX" START_WY="$WY" SEED="$SEED" TRAJ="$TRAJ" MOTION=1 SCHED=$S SCRMODE="${SCRMODE:-1}" "$B/elkscroll" >/dev/null 2>&1 \
 	|| { echo "fingerprint: build failed" >&2; exit 1; }
 rm -f "$OUT"
 "$ROOT/build-emu/elkh" --rompath "$ROMS" $PRE boot 2.5 load "$B/elkscroll" 2000 type 'CALL &2000\n' boot 2 \

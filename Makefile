@@ -29,18 +29,26 @@ SCRMODE ?= 1
 CA65    ?= ca65
 LD65    ?= ld65
 
-DEFINES := $(foreach v,START_WX START_WY TRAJ SEED MOTION SCHED LOCK1,$(if $($(v)),-D $(v)=$($(v))))
+DEFINES := $(foreach v,START_WX START_WY TRAJ SEED MOTION SCHED,$(if $($(v)),-D $(v)=$($(v))))
 
 SRC     := $(wildcard src/*.s src/*.inc)
 EMUBUILD ?= build-emu
 
-IMG     := $(if $(filter 2,$(SCRMODE)),elkscroll2,elkscroll)
+IMG     := elkscroll_mode$(SCRMODE)
 
-.PHONY: all one emu test run run2 clean
-all:
-	@$(MAKE) --no-print-directory one SCRMODE=1 BUILD=$(BUILD)
+.PHONY: all elkscroll_mode1 elkscroll_mode2 one bin emu test run_mode1 run_mode2 clean
+all: elkscroll_mode1 elkscroll_mode2
+elkscroll_mode1:
+	@$(MAKE) --no-print-directory one SCRMODE=1 BUILD=$(BUILD)/mode1
+elkscroll_mode2:
 	@$(MAKE) --no-print-directory one SCRMODE=2 BUILD=$(BUILD)/mode2
 one: $(BUILD)/$(IMG).ssd
+
+# The prebuilt images in bin/, from a default build of both.
+bin: all
+	@mkdir -p bin
+	cp $(BUILD)/mode1/elkscroll_mode1.ssd $(BUILD)/mode1/elkscroll_mode1.uef bin/
+	cp $(BUILD)/mode2/elkscroll_mode2.ssd $(BUILD)/mode2/elkscroll_mode2.uef bin/
 
 # config.inc, gen_tables.s, gen_variants.s and model.bin, all at once.
 $(GEN)/stamp: tools/gen.py tools/swatch35.py $(BUILD)/defines
@@ -77,11 +85,11 @@ emu:
 test: all
 	test/soak.sh -n 5000
 
-run: one
-	$(EMUBUILD)/elkview --rompath $(or $(ELK_ROMS),roms) --realula --ssd $(BUILD)/$(IMG).ssd
+run_mode1: elkscroll_mode1
+	$(EMUBUILD)/elkview --rompath $(or $(ELK_ROMS),roms) --realula --ssd $(BUILD)/mode1/elkscroll_mode1.ssd
 
-run2:
-	@$(MAKE) --no-print-directory run SCRMODE=2 BUILD=$(BUILD)/mode2
+run_mode2: elkscroll_mode2
+	$(EMUBUILD)/elkview --rompath $(or $(ELK_ROMS),roms) --realula --ssd $(BUILD)/mode2/elkscroll_mode2.ssd
 
 clean:
 	rm -rf $(BUILD)

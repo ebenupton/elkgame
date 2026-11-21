@@ -45,7 +45,7 @@ and `basic.rom` (BASIC II), in the directory given by `--rompath` (or a subdirec
 ## elkview
 
 ```sh
-build-emu/elkview --rompath roms --realula --ssd build/elkscroll.ssd
+build-emu/elkview --rompath roms --realula --ssd build/mode1/elkscroll_mode1.ssd
 ```
 
 | Option | |
