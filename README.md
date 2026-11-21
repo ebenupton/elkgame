@@ -173,4 +173,5 @@ To understand the engine, read `docs/DESIGN.md`.
 
 ## Licence
 
-No licence has been chosen yet.
+BSD 2-Clause: see [`LICENSE`](LICENSE).  The Clock Signal fork in `emu/clk` keeps its own
+licence (MIT), and the Electron ROM images the emulator needs are not included.
