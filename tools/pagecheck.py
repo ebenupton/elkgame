@@ -13,7 +13,7 @@ calibration then has to absorb; in the scanline loop's segments there must be no
 import re
 import sys
 
-CODE = 'ENTRY,LOOP,LOOP2,SNIPS,TAILS,VARIANTS,DLOOP,CODE,NSTORE,VCODE'
+CODE = 'ENTRY,LOOP,LOOP2,TAILS,VARIANTS,DLOOP,CODE,NSTORE,VCODE'
 BRANCHES = {0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0}
 
 

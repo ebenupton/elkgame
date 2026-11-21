@@ -1,14 +1,28 @@
 # Acorn Electron ULA: behaviour notes for the raster-timed scroll engine
 
-> **About this document.** These notes were compiled while the engine was being
-> developed, from the HDL, captures, emulators, manuals and forum threads listed in
-> section 0, before any program ran on a real Electron. They are reproduced as
-> written. "Local copy" paths, `refs/...` and `../...` references are to the original
-> research workspace and are not part of this repository. Section 11 refers to earlier
-> versions of the scroll test: a 40-character window, then 50 and 58 characters at
-> other screen positions. Section 13 lists the patches made to Clock Signal; they are
-> on the fork's `elk-headless` branch (`emu/clk`). Section 15, added afterwards,
-> records what hardware probes later showed about the real ULA.
+> **About this document.** A research record of the Electron ULA's behaviour, as the
+> scroll engine depends on it.
+>
+> - **Sections 0–14** were compiled on 12 November 2026, before any program ran on a
+>   real Electron, from the HDL, captures, emulators, manuals and forum threads listed
+>   in section 0. Their findings and citations stand as compiled. Where a later finding
+>   overturns or narrows one, or the engine went another way, a note marked
+>   **[later finding]**, **[superseded]** or "not adopted" says so, usually pointing to
+>   section 15.
+> - "Local copy" paths, `refs/...` and `../...` references are to the original research
+>   workspace and are not part of this repository.
+> - **Section 11** applies the findings to the scroll engine as it was then planned
+>   (then called "the scroll test": a 40-character window, later 50 and 58 characters at
+>   other screen positions, with a MODE 5 lead-in). Notes there say what the engine
+>   does today: a window 56 characters wide at screen character 16, a lead-in in mode
+>   value 7, MODE 3 in every window line's sync, and a raster lock of one read in line 0
+>   (DESIGN.md, "The window loop and the lead-in" and "The frame top: the lock and the
+>   free time").
+> - **Section 13** lists the patches made to Clock Signal; they are on the fork's
+>   `elk-headless` branch (`emu/clk`).
+> - **Section 15**, added later in November 2026, records what probe programs and
+>   the engine itself later showed on real Electrons, ULA by ULA, and where the
+>   emulator differs from each real ULA (15.5).
 
 Compiled 2026-11-12. Everything here is cited. Where a statement is my own inference
 it is marked **[inference]**; where the sources disagree, or none of them pins a point down,
@@ -25,6 +39,7 @@ it is marked **[uncertain]**.
 | MAME | mamedev/mame `src/mame/acorn/electron_ula.{cpp,h}`, `electron.cpp` | master, 2026-11-12 | `refs/mame/` |
 | AUG | *Acorn Electron Advanced User Guide*, chs 14–15 (scan; text pulled out with PDFKit) | rigpix.com PDF | `refs/electron_aug/` (`aug_extracted_text.txt`) |
 | SD | StarDot threads t=20004 (both pages), t=16962 (all 3 pages), t=12608, t=11198 | fetched 2026-11-12 | `refs/stardot/*.txt` |
+| PAS | pastraiser.com's Electron hardware notes: the source of the claim that mode value 7 wraps to &3000 (15.2) | – | – |
 | BOD | David Boddie, "The Acorn Electron ULA" (design notes for a re-implementation; not authoritative). The live hg server now returns 401; this is the 2021 Wayback copy | rev `89b5767d944d` | `refs/boddie_ULA/` |
 
 Not obtained:
@@ -218,6 +233,10 @@ Note: in all models the *number of slots* between the stall release and any late
 | 110 | 6 | &6000 | 40 | yes |
 | 111 | behaves as 4 | &5800 | 40 | no |
 
+**[later finding]** The last row is the FPGA's decode, and it matches a Ferranti ULA.
+A Synertek ULA fetches mode value 7 like MODE 4 but wraps it at &8000 to &3000
+(section 15.2).
+
 The other bits of &FE07:
 - bit 7 = CAPS LED.
 - bit 6 = cassette motor relay.
@@ -255,7 +274,9 @@ Expressed relative to the previous line's S, both are "the write completes at S 
 
 **Behaviour (FPGA L1011–1014).** Every tick, if `byte_addr(14..11)="0000"` (i.e. the counter has rolled past &7FFF to below &0800), then `byte_addr := mode_base & byte_addr(10..3)`.
 
-The base used is the one for the mode in force *at the tick the counter rolls over*. So if the first t characters of a line (in MODE 5) cross &8000, the wrap goes to &5800, not &3000. The MODE 6 base is &6000 (`"1100"`, L870–874), which confirms the user's note.
+The base used is the one for the mode in force *at the tick the counter rolls over*. So if the first t characters of a line (in MODE 5) cross &8000, the wrap goes to &5800, not &3000. The MODE 6 base is &6000 (`"1100"`, L870–874), as had been assumed.
+
+**[later finding]** On real ULAs the base for mode value 7 depends on the maker: &5800 (as MODE 4) on a Ferranti, &3000 on a Synertek (section 15.2).
 
 | | FPGA | JAM | CLK | MAME |
 |---|---|---|---|---|
@@ -319,7 +340,21 @@ Whether a real ULA (or an external ROM-select latch) really re-pages on such wri
 
 ---
 
-## 11. Consequences for the test
+## 11. Consequences for the scroll engine (as planned, 12 November 2026)
+
+What the engine took from this section, and where it went another way (DESIGN.md has
+the engine as built):
+- 11.1: the lead-in mechanism, as planned, with the MODE 1 write at S + (23 + t) µs on
+  the FPGA. The real ULA needs it half a microsecond later (15.1), and the lead-in is
+  in mode value 7, not MODE 5, which brings its own hazard on Ferranti ULAs (15.2).
+- 11.2: the row stride of 576 bytes. The line-0 problem is solved differently: a write
+  of MODE 3 inside every window line's sync, so that line 7 is not a "last line" and
+  line 0 reloads from the latch like lines 1–7.
+- 11.3: the MODE 6 band at the top of the frame, ended by a write at S + 17 µs.
+- 11.4, 11.6, 11.7, 11.8: as described (the palette on line 29, the field parity from
+  the RTC flag at start-up, the display-end poll, the keyboard from main RAM).
+- 11.5: the raster lock is one stalled read, issued inside line 0's fetches; line 0 is
+  MODE 1, or MODE 3 when there is a band (15.3).
 
 Numbers are relative to **S** (end of the stalled RAM read on an active MODE 1 line), in µs; 1 µs = one 1 MHz slot = 2 CPU cycles. A 1 MHz write "lands" at the end of its (stretched) cycle. I/O writes snap to the next slot, so a write instruction may start one 2 MHz cycle earlier or later with no effect.
 
@@ -344,12 +379,13 @@ From SWRAM, `STA &FE07` takes 5 or 6 CPU cycles: three 2 MHz fetches, then a 2- 
 - **Wrap hazard:** if &8000 is crossed during a line's MODE 5 part, the wrap goes to &5800 (§8). Avoid row starts (and line-0 starts, see 11.2) within 8t bytes below &8000, or keep the playfield from crossing &8000 inside a MODE 5 lead-in.
   - **Which lines it can hit (../wide):** with 64-byte-aligned rows, only a row starting at &7FC0 has &8000 inside a lead-in, at the step from its character 7 to 8. Lines 1–7 (starting at the row's first character) reach that step only for t = 8. Line 0 of a later row starts 8−t in and takes 8 MODE 5 steps, so it always reaches it — but only that one row's line 0, at most one line a frame. So the 3 µs MODE 1 hole is needed on every t = 8 line and on that one line 0 only; every other line 0 can be unsplit (one write at +8 µs). The hole schedules then end by +11 µs, not +16 (`../wide/gen.py`, checked at every phase S 648..659), and the window can start at character 22. The scroll test's original rule (no MODE 5 step across *any* 8-character boundary, on every line 0) was stricter than needed.
   - (A MODE 6 lead-in, wrapping to &6000, was considered as an alternative alias and not needed; its effect on the 10-line row count was not checked.)
+  - **[later finding]** The engine's lead-in is in mode value 7, not MODE 5, on the understanding (from pastraiser.com) that mode value 7 wraps to &3000, which keeps the &7FC0 row right with the real schedule's 8 µs lead-in. That holds on a Synertek ULA. A Ferranti ULA wraps mode value 7 to &5800, like MODE 5, so on a Ferranti the hazard described here remains: the row starting at &7FC0 is wrong whenever t = 7 on the real schedule (15.2). The engine does not avoid it yet.
 
 ### 11.2 Row stride 576 / start-of-row register A14..A6 — **row stride confirmed; "all lines of a row align" refuted for line 0**
 
 - FPGA and hoglet agree (§4): after a line 7 that consumed 80−t characters, `row_addr` = floor((R+640−8t)/64)·64 = R+576 for t=1..8. **Confirmed.**
 - But line 0 of the *next* row starts from the untruncated counter, R′ + 8(8−t), i.e. (8−t) characters to the right in memory. Line 0 would show (8−t) characters left of lines 1–7, for t=1..7. Real hardware shows this one-line-in-eight effect (SD p280011).
-- **Zero-cost fix [inference, from the FPGA model]:** on line 0 of every row that follows a scrolled MODE 1 row, use an **8 µs** MODE 5 lead-in, i.e. the 5→1 write at S+31 µs. Lines 1–7 keep t µs. Line 0 then shows character c at (c+t)/2 µs, aligned with the rest.
+- **Zero-cost fix [inference, from the FPGA model; not adopted: the engine writes MODE 3 inside every window line's sync instead, so that line 0 reloads from the latch]:** on line 0 of every row that follows a scrolled MODE 1 row, use an **8 µs** MODE 5 lead-in, i.e. the 5→1 write at S+31 µs. Lines 1–7 keep t µs. Line 0 then shows character c at (c+t)/2 µs, aligned with the rest.
   - Proof: line 0 starts at index s=8−t; with lead-in L, index c lands at (c−s+L)/2, which equals (c+t)/2 iff L=8.
   - The first MODE 1 row of the frame needs *t*, not 8. Its line 0 comes aligned from screen_base, or from the MODE 6 band, which consumes 320 = 5·64 bytes per row.
   - The left strip on those lines is 8 µs wide instead of t. Hiding the left 8 µs is needed anyway for a steady left edge, since t varies.
@@ -376,6 +412,7 @@ From SWRAM, `STA &FE07` takes 5 or 6 CPU cycles: three 2 MHz fetches, then a 2- 
   - MODE 1 still ends at v=255 whatever f is, so the window's bottom stays put and the content shifts down by 10f lines.
   - Screen start below &3000 is fine as long as it is ≥ &0800 (below that the wrap rule fires immediately).
 - **[suggestion]** A MODE 3 band (also 10-line rows, wrap at &4000, 640 bytes per row) would contend on band lines 0–7 and so give real syncs inside the band.
+  - The engine uses MODE 3 only for line 0 when there is a band, so that the lock read stalls; the rest of the band is MODE 6.
 
 ### 11.4 Palette writes at fixed lines — **confirmed**
 
@@ -389,6 +426,7 @@ From SWRAM, `STA &FE07` takes 5 or 6 CPU cycles: three 2 MHz fetches, then a 2- 
   - The absolute position relative to pixels is ±0.5 µs **[uncertain; real phase unmeasured]**.
   - Relative timing to later I/O slots is model-independent.
 - **Where the sync works:** only on active MODE 0–3 lines (v<256), lines 0–7 of a row (not MODE 3 spacers), and after the MODE 1 switch on that line. The bottom 56 lines and the MODE 6 band need cycle counting.
+  - The engine's lock is one such read, issued inside line 0's fetches (line 0 is wholly MODE 1 or MODE 3); everything after it, to the window's last line, is counted from its S (15.3).
 - **Speeds:**
   - &8000–&BFFF in banks other than 8/9 is 2 MHz uncontended in every model (and AUG §15.3.1 for ROM).
   - &FC00–&FEFF and keyboard reads are 1 MHz, 2 or 3 half-cycles, ending on a slot (CLK wrongly runs FC/FD and keyboard at 2 MHz).
@@ -437,7 +475,7 @@ From SWRAM, `STA &FE07` takes 5 or 6 CPU cycles: three 2 MHz fetches, then a 2- 
 
 ## 12. MAME as a second emulator
 
-Not usable for this test:
+Not usable for this engine:
 - Per-scanline rendering with the mode current at render time.
 - No row register.
 - No interlace or field alternation.
@@ -449,7 +487,11 @@ Not usable for this test:
 
 ---
 
-## 13. Recommended CLK patches (to match the FPGA for everything the test relies on)
+## 13. Recommended CLK patches (to match the FPGA for everything the engine relies on)
+
+These patches, with 13.7's RTC timing, are the fork's first commit (`emu/README.md`).
+The real-ULA switch of section 15 is a later commit, and the start-of-row register's
+old behaviour can be selected again for a negative control (elkh `rowreg old`).
 
 ### 13.1 Start-of-row register holds A14..A6 only (Video.cpp L101–107)
 
@@ -589,7 +631,7 @@ This keeps the stalled-read end at h=648, as CLK has it now. It fixes border-reg
 
 ### 13.7 Optional, to match the real-chip captures rather than the FPGA
 
-- RTC about 15 ticks early: field 0 at v=98, h=1008; field 1 at v=99, h=496 (Video.cpp L208).
+- RTC about 15 ticks early: field 0 at v=98, h=1008; field 1 at v=99, h=496 (Video.cpp L208). The fork's first commit includes the RTC event's timing (`emu/README.md`).
 - Nothing else in CAP differs from the FPGA by more than 2 ticks.
 
 Not patched, because it is cosmetic: the dropped MODE 5 character at a mid-line 40→80 split (§7).
@@ -619,48 +661,91 @@ Not present anywhere I looked (ElectronFpga, JamSoft, adbsolutions/ElectronULA t
 
 ---
 
-## 15. Later findings: the real (Ferranti) ULA
 
-Added after probe programs ran on an issue 6 Electron (November 2026). The probes
-moved a window's lead-in through every schedule and photographed the result.
+## 15. Later findings: real ULAs
+
+Added after programs ran on real Electrons in November 2026: first probe programs,
+which moved a window's lead-in through every schedule and were photographed, then the
+scroll engine itself (21 November 2026). Electrons have ULAs made by Ferranti or by
+Synertek, and each finding says which it was seen on.
 
 ### 15.1 The 40-column address steps half a microsecond earlier
 
-- **The difference.** In the 40-column modes (4, 5, 6 and 7) the real chip steps its
-  address counter in the first half of each microsecond; the FPGA model (and
+- **The difference.** In the 40-column modes (4, 5, 6 and mode value 7) the real chip
+  steps its address counter in the first half of each microsecond; the FPGA model (and
   JamSoft's) step it in the second half (section 7).
 - **Effect on a mode switch.** A mode write lands between the two, so on switching
   from a 40-column mode to MODE 1 the real chip has made one step fewer. A lead-in of
   t characters needs the MODE 1 write at t + 1 µs on the real chip, against t µs on
   the FPGA.
-- **The engine** carries both schedules and switches between them at run time
-  (DESIGN.md 4.3).
-- **The emulator.** The CLK fork models the real chip when
+- **Where it was measured.** With probe programs on a **Ferranti** ULA, in an issue 6
+  Electron. Whether **Synertek** ULAs step the same way has not been measured. The
+  logic-analyser captures (sections 1–3: sync, display end, RTC, field alternation)
+  found the two makers within 1–2 ticks of each other, but they do not show the
+  address phase.
+- **The engine** carries both schedules and switches between them at run time: full
+  stop for the real ULA's (the default), comma for the FPGA's (DESIGN.md, "The window
+  loop and the lead-in").
+- **The emulator.** The CLK fork models the real chip's phase when
   `Electron::VideoOutput::real_m5_phase` is set (elkh `realula 1`, elkview
   `--realula`). It reproduced probes 6, 7 and 8 as photographed.
+- **It may bear on 15.4.** The probes' "real chip steps in the first half" was read
+  from where a mode write's switch showed. A write that takes its own video slot
+  (15.4) would show one character differently. The engine's schedules work either way.
 
-### 15.2 Mode value 7 wraps to &3000
+### 15.2 Mode value 7: Synertek and Ferranti differ
 
-- **What it is.** Mode value 7 (&FE07 bits 3..5 = 7) is undocumented. It displays
-  like MODE 4 (40 columns, 1 bit per pixel) but wraps the address at &8000 to &3000,
-  where MODE 4 and MODE 5 wrap to &5800 (pastraiser.com's Electron hardware notes).
-- **Why it matters.** With the real schedule's 8 µs lead-in, the row starting at
-  &7FC0 takes its eighth 40-column step across &8000. MODE 5 would send it to &5800,
-  but in mode 7 it stays in the 20K ring.
-- **Status.** This build relies on it. The probes that confirmed the half-microsecond
-  difference predate the mode 7 lead-in, so the wrap itself is still to be seen on
-  hardware.
-- **The emulator.** The CLK fork models it with the real-ULA switch on.
+- **What it is.** Mode value 7 (&FE07 bits 3..5 = 7) is undocumented. It fetches like
+  MODE 4: 40 columns, 1 bit per pixel.
+- **Synertek ULAs** (and the "Aberdeen" ULA family, which is the same here) wrap the
+  address at &8000 to **&3000**, the base of the 20K modes.
+  This is the behaviour pastraiser.com's Electron hardware notes describe, from which
+  the engine first took it.
+- **Ferranti ULAs** treat it as plain MODE 4, which wraps at &8000 to **&5800**. The
+  FPGA's decode (section 7, L836–890) does the same.
+- **Why it matters.** The engine's lead-in is in mode value 7. With the real
+  schedule's 8 µs lead-in (t = 7, the MODE 1 write at 8 µs), a line takes eight
+  40-column steps from its row start. Rows start on 64-byte boundaries (the ring rows
+  are 576 bytes), so the row that starts at **&7FC0** takes its eighth step across
+  &8000 (the hazard of 11.1). On a Synertek the line wraps to &3000 and is right. On a
+  Ferranti it wraps to &5800 and that row's lines show the wrong bytes.
+- **The restriction.** On Ferranti ULAs, the window's character row whose ring row
+  starts at &7FC0 is displayed wrongly whenever t = 7 on the real schedule. The engine
+  does not avoid this yet. In the emulator, with a build whose lead-in is MODE 4 (what
+  a Ferranti does with mode value 7), it affected about 1.5% of fields on random walks,
+  always exactly that one character row (8 lines) at t = 7. A fix would need the
+  lead-in not to be in a 40-column mode when it crosses &8000 (for example, a MODE 1
+  hole across the step from character 7 to 8 on that row's lines, as 11.1 describes),
+  or row starts that avoid &7FC0.
+- **The emulator.** The CLK fork's real-ULA switch models the Ferranti's 40-column
+  phase (15.1) **and** the Synertek's wrap to &3000 together. It matches neither ULA
+  exactly, and it does not reproduce the Ferranti's &7FC0 fault.
 
 ### 15.3 The raster lock
 
-- **The failure.** The probes from 5 on showed occasional corrupt pixels and vertical
-  bars in the lead-in area, on both kinds of ULA. In the emulator exactly this appears
-  when a field's lock read misses line 0's fetches: it returns without stalling, and
-  every mode write of that field is mistimed.
-- **The fix.** The engine now locks with two stalled reads (DESIGN.md 3.1) and pads its
-  fixed work so that the lock read lands in the same place whatever the field did.
-  This is the likely cause of what was seen, but not proven on hardware.
+- **The failure seen.** The probes from probe 5 on showed occasional corrupt pixels and
+  vertical bars in the lead-in area, on both makers of ULA. In the emulator exactly
+  this appears when a field's lock read misses line 0's fetches: it returns without
+  stalling, and every mode write of that field is mistimed. This is a likely cause of
+  what was seen, but it is not proven on hardware. **[inference]** Some of it may also
+  have been the leak of 15.4, which was not known then and which shows at the
+  lead-in's end.
+- **[superseded] Two reads.** The engine then locked with two stalled reads, the first
+  late in line 0 and the second mid line 1, so that a first read arriving after line
+  0's fetches still left the second to stall. That lock has been removed.
+- **The lock now.** One read of a main-RAM byte (`SYNCB`, &0200), issued inside line
+  0's fetches, stalls until S of line 0 (S, the end of the line's display fetches, is
+  about h 648; section 6). Line 0 is MODE 1, or MODE 3 when there is a band, so the
+  read stalls. The counted code starts at S of line 0; the switch to MODE 4 (or MODE 6
+  in a band) is at line 0, S + 3 µs. The fixed work below the window is padded so that
+  the read is issued in the same place whatever the field did.
+- **Margins, in the emulator.** Over the soak the read is issued at h 152–488 of line
+  0 (the position of the marker status read just before it; the read itself follows
+  3 µs later): about 21 µs of spread, from the 1 MHz access phases of the fixed work
+  and the display-end poll. That leaves about 12 µs to spare on the early side and
+  7 µs on the late side of line 0's fetches (h 0 to about 648). Too early is the worse failure: a read issued before line 0's fetches returns
+  at once, and every later field's read then arrives too early as well. The start-up
+  sync's read lands at h 312. This lock has not yet run on hardware.
 
 ### 15.4 A CPU write to the ULA takes the video slot (21 November 2026)
 
@@ -668,29 +753,50 @@ moved a window's lead-in through every schedule and photographed the result.
   fetching for the display takes that video slot: the byte shown there is the RAM byte
   at the CPU's address with A15 dropped, **RAM[&7E00 + the address's low byte]** (for
   &FE07, RAM[&7E07]), painted in the mode the write sets. The ULA decodes A0–A3 in
-  page &FE, so &FE07's mirrors &FE17 … &FEF7 show &7E17 … &7EF7.
-- **Reads.** Apparently not: every window line reads &FE00 in mid-window (character
-  ~44), and nothing shows there.
-- **Found with** the scroll demo on a real Electron, on the lead-in's last write
-  (the window's mode, DESIGN.md 4.5):
+  page &FE, so &FE07's mirrors &FE17 … &FEF7 should show &7E17 … &7EF7 (not yet
+  tested).
+- **Reads.** Apparently not: the builds tested had an older window loop that read
+  &FE00 once a line in mid-window (about character 44), and nothing showed there. The
+  current loop makes no read in the window, so it cannot show either way.
+- **Which ULA.** Seen on one real Electron, whose ULA type was not recorded.
+- **Found with** the scroll engine, on the lead-in's last write (the window's mode):
   - at 57 wide on character 15, the window's first character went black at one
-    position in eight (t = 7, whose write lands on character 15);
-  - at 56 wide on character 16, a thin bar the height of the window, in the left
-    margin, at the lead-in's end: it moved two characters a column step (the end
-    moves 1 µs), went with t = 0, and its colour depended on the scroll's path and
-    position, not on the window's bytes;
-  - a debug build's keys: zeroing what the band above the window fetches cured it only
-    when &7E00 was in that area; writing &0F to &7E00–&7E07 turned the bar cyan, and
-    zeroing them removed it. The colours seen matched &7E07's contents in nine
+    position in eight (t = 7, whose MODE 1 write lands at h 120, character 15);
+  - at 56 wide on character 16, a thin bar the height of the window appeared in the
+    left margin, at the lead-in's end: it moved two characters a column step (the
+    lead-in's end moves 1 µs), vanished at t = 0, and its colour depended on the
+    scroll's path and position, not on the window's bytes;
+  - with a debug build's keys: zeroing what the band above the window fetches cured it
+    only when &7E00 was in that area; writing &0F to &7E00–&7E07 turned the bar cyan,
+    and zeroing them removed it. The colours seen matched &7E07's contents in nine
     emulated states, and nothing else.
-- **Not yet tested:** the bar should move to &7EF7 with the write at &FEF7
-  (`ELKALIAS56`); whether &FE01 or page &FF also reach the mode register; whether
-  writes to the expansion pages (&FC, &FD), which the ULA also stretches to 1 MHz,
-  take a slot (they would show &7Cxx, &7Dxx).
-- **The models.** The FPGA keeps CPU and video on separate ports of a dual-port RAM,
+- **What the engine does about it.** Every ULA write the engine makes during the
+  display shows RAM[&7E07]: the lead-in's switch to the window's mode, and the blip (a
+  mode write in the right margin when the lead-in is 0 or 1 µs). Writes in the
+  horizontal blanking have no slot to take. So the engine keeps &7E07 zero, at the
+  cost of one black byte in the picture: line 7 of whichever map cell is at &7E00
+  (DESIGN.md, "The leak byte").
+- **Not modelled.** The FPGA keeps CPU and video on separate ports of a dual-port RAM,
   so it cannot show this, though its clock stretching treats &FC–&FE accesses exactly
   like RAM accesses (`ram_access = '1' or io_access = '1'`, ElectronULA.vhd L1258).
-  CLK does not model it either; the demo keeps &7E07 zero and the soak checks it.
-- **It may bear on 15.1.** The probes' "real chip steps in the first half" was read
-  from where a mode write's switch showed; a write that takes its own slot would show
-  one character differently. The engine's schedules work either way.
+  The CLK fork does not model it either. The engine's soak expects black wherever the
+  window fetches &7E07 and audits stores to it instead.
+- **Open questions** (not yet tested on hardware):
+  - that the leaked byte follows the alias: a write to &FEF7 should show &7EF7;
+  - whether &FE01 or page &FF also reach the mode register;
+  - whether writes to the expansion pages (&FC, &FD), which the ULA also stretches to
+    1 MHz, take a slot (they would show &7Cxx, &7Dxx);
+  - how many of the leaked byte's pixels show;
+  - whether Ferranti and Synertek ULAs behave alike here.
+
+### 15.5 The emulator against each real ULA
+
+| | FPGA HDL | CLK fork, `realula 0` | CLK fork, `realula 1` | Ferranti ULA | Synertek ULA |
+|---|---|---|---|---|---|
+| 40-column address step (15.1) | second half of the µs | second half | first half | first half (issue 6 probes) | not measured |
+| mode value 7 wrap at &8000 (15.2) | &5800 | &5800 | &3000 | &5800 | &3000 |
+| CPU write to a ULA register takes the video slot (15.4) | no | no | no | yes on one machine whose ULA type was not recorded; not known per maker | as Ferranti |
+| sync, display end, RTC, field alternation (sections 1–3) | within 1–2 ticks of the captures, except the RTC, about 14–15 ticks later | as the FPGA, RTC moved (13.7) | as `realula 0` | captured | within 1–2 ticks of the Ferranti |
+
+So no emulated model is a Ferranti or a Synertek in every respect: `realula 1` has the
+Ferranti's phase and the Synertek's wrap, and neither model shows the leak.

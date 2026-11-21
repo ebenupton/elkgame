@@ -4,22 +4,27 @@
     python3 tools/mkimages.py BINARY OUTDIR [NAME]
 
 Writes OUTDIR/NAME.ssd, a DFS disc (80 tracks, single-sided) whose !BOOT *RUNs the
-program, with boot option 3 so that SHIFT+BREAK starts it (a Plus 3 with a DFS, MMFS on
-an ElkSD, a Gotek, ...), and OUTDIR/NAME.uef, the same program on tape (*RUN or
-CHAIN"" and PLAY).  The program loads and runs at &2000.  NAME is elkscroll (the
-default: file ELKSCRL, title "ELK SCROLL") or elkscroll2 (the MODE 2 demo: ELKSCR2,
-"ELK SCROLL 2")."""
+program, with boot option 3 (*EXEC !BOOT) so that SHIFT+BREAK starts it (a Plus 3 with
+a DFS, MMFS on an ElkSD, a Gotek, ...), and OUTDIR/NAME.uef, the same program on tape
+(*RUN or CHAIN"" and PLAY).  The program loads and runs at &2000.  NAME is one of
+IMAGES:
+
+    elkscroll_mode1   (the default) the MODE 1 demo: file ELKSCR1, title "ELK SCROLL 1"
+    elkscroll_mode2   the MODE 2 demo: file ELKSCR2, title "ELK SCROLL 2"
+
+The Makefile passes NAME as elkscroll_mode$(SCRMODE)."""
 import os
 import struct
 import sys
 
+# image name -> (the program's file name on disc and tape, the disc title)
 IMAGES = {'elkscroll_mode1': ('ELKSCR1', 'ELK SCROLL 1'), 'elkscroll_mode2': ('ELKSCR2', 'ELK SCROLL 2')}
-NAME = 'ELKSCRL'
+NAME = 'ELKSCR1'                # (replaced by main from IMAGES)
 LOAD = EXEC = 0x2000
 
 
-def ssd(data, title='ELK SCROLL'):
-    """A DFS disc image holding !BOOT and the program."""
+def ssd(data, title='ELK SCROLL 1'):
+    """A DFS disc image (800 sectors) holding !BOOT and the program, NAME."""
     boot = b'*RUN ' + NAME.encode() + b'\r'
     files = [('!BOOT', boot, 0, 0), (NAME, data, LOAD, EXEC)]
     sectors = 800
@@ -69,7 +74,8 @@ def crc16(data):
 
 
 def uef(data):
-    """A UEF tape image: 256-byte CFS blocks with carrier tone between them."""
+    """A UEF tape image of the program, NAME: 256-byte CFS blocks with carrier tone
+    between them."""
     out = bytearray(b'UEF File!\0' + bytes([10, 0]))
 
     def chunk(cid, body):

@@ -4,19 +4,23 @@
     python3 test/fpcompare.py OLD NEW
 
 For each field, three things:
-  picture   every mode and palette write (&FE07-&FE09) from line 0 to the window's
+  picture   every mode and palette write (&FE07-&FE09) on lines 0-200, to the window's
             exit, at its raster position: these place the picture, and must match
             exactly -- the lock re-synchronises every field, so nothing done below the
             window can move them unless the lock fails;
   fixed     the length of the fixed work below the window: from the display-end poll's
-            last read (the first status read at line >= 240 with the flag set) to the
-            screen-start write in ula_apply (&FE02);
-  lock      where the lock read lands in line 0 (the last status read before the
-            palette line's first write).
+            last read (the first status read at line >= 240 with the display-end flag,
+            bit 2, set) to the first screen-start write (&FE02) at line >= 240, in
+            ula_apply;
+  lock      where the lock read is issued in line 0.  The lock read itself (&0200) is
+            not in the log; this is the last status read on line 0 before the palette
+            line's first write, frame_tail's marker just before it.
 The two runs are first aligned on their sequences of screen-start writes (a change to
-the start-up code can shift the program's fields against the capture's by one or two).
-Prints the fields whose picture writes differ (exit status 1 if any) and histograms of
-the differences in the fixed work's length and the lock position, in CPU cycles.
+the start-up code can shift the program's fields against the capture's by one or two);
+the first fields, the start-up's, are skipped.  Prints the fields whose picture writes
+differ (the first five, and a count; exit status 1 if any) and histograms of the
+differences in the fixed work's length and the lock position, in CPU cycles (2 MHz,
+8 h ticks).
 """
 import collections
 import sys

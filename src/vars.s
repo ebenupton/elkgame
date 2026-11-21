@@ -1,6 +1,7 @@
 ; vars.s -- the variables, in the sideways RAM bank (2 MHz, like the code).  There is
-; no zero-page use: the bank's absolute addressing is as fast as main RAM's zero page,
-; and the OS's workspace is left alone.
+; no zero-page use: an absolute access to the bank costs no more than a zero-page one
+; to main RAM (1 MHz), and the OS's workspace is left alone.  The bank's variables
+; start as zeros in the image.
 
 	.segment "VARS"
 	.align	256
@@ -13,9 +14,11 @@ VJ:	.res	2			; loop 2: the gadgets' jump: this field's variant, or VX
 	NOWRAP	VRET
 	NOWRAP	VJ
 vav:	.res	1			; the blip's mode value (X through loop 2)
-VE:	.res	1			; the entering column's bytes for this colour pair:
-ZB:	.res	1			; (always 0: the tail tA6 loads it, not VO, for the leak cell's row)
-VO:	.res	1			;   even lines, odd lines (an odd row's line 7 is 0)
+VE:	.res	1			; the entering column's bytes for this colour pair: even lines
+ZB:	.res	1			; a zero byte, never written: tA6 loads it, not VO, as line 7 of an even
+					; row whose entering cell is LEAKCELL, so &7E07 stays zero (hw.inc LEAK;
+					; docs/DESIGN.md, "The leak byte")
+VO:	.res	1			; odd lines, and an even row's line 7 (an odd row's is 0)
 VEN:	.res	1			; and for the next pair
 	.assert	>ZB = >VO, error, "ZB must share VO's page (the B5 slice patches tA6's low byte)"
 VON:	.res	1
@@ -27,8 +30,8 @@ cin0:	.res	2			; strip.s: the first row's entering and leaving cells
 cout0:	.res	2
 vcv:	.res	1			; the lead-in mode value (the palette line)
 tv:	.res	1			; t, the lead-in in characters
-cb8:	.res	2			; 8 x the window's first fetched column
-topmode: .res	1			; the mode of lines 0 and 1
+cb8:	.res	2			; 8 x cb: the map column a window line starts fetching at
+topmode: .res	1			; the mode of line 0 (MODE 1, or MODE 3 in a band)
 fe02v:	.res	1			; the screen start registers' values
 fe03v:	.res	1
 

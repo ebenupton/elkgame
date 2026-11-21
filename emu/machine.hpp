@@ -1,14 +1,17 @@
-// machine.hpp: an Acorn Electron on Clock Signal's core, for elkh and elkview.
+// machine.hpp: an Acorn Electron on Clock Signal's core, shared by elkh and elkview.
 //
-// Clock Signal's Electron (Machines/Acorn/Electron) is compiled into the including
-// file with CLK_HEADLESS defined, so the harness can reach the machine's state: RAM,
-// the paged ROM slots, the ULA's per-field capture (pixels, fetch addresses, modes and
-// every &FExx access with its raster position) and the bus hooks.  The CLK fork in
-// emu/clk (branch elk-headless) adds those, and the ULA fixes the demo depends on
-// (docs/ULA-NOTES.md section 13, and the real-ULA switch): stock CLK draws the demo
-// wrongly.
+// Clock Signal's Electron (Machines/Acorn/Electron/Electron.cpp) is compiled into the
+// including file with CLK_HEADLESS defined, which makes the machine's and the ULA's
+// internals public, so the harness can reach RAM (ram_), the ROM and sideways RAM slots
+// (roms_, active_rom_), the CPU, the ULA's raster counters and per-field capture
+// (pixels, fetch addresses, modes, every &FExx access with its raster position, the pad
+// audit) and the bus hooks (opcode fetches, main RAM and sideways RAM stores).  All of
+// that comes from the CLK fork in emu/clk (branch elk-headless), with the ULA fixes the
+// demo depends on (docs/ULA-NOTES.md, "Recommended CLK patches") and the real-ULA switch;
+// upstream CLK draws the demo wrongly.  See emu/README.md.
 //
-// Include this from exactly one translation unit per executable.
+// Include this from exactly one translation unit per executable: it defines the
+// Electron's non-inline code.
 
 #pragma once
 
@@ -28,8 +31,10 @@ namespace elk {
 
 using Machine = Electron::ConcreteMachine<false>;
 
-// ROM images are looked up by CLK's catalogue names (os.rom: the Electron MOS 1.00;
-// basic.rom: BASIC II) in DIR and DIR/Electron.
+// CLK's ROM loader: each ROM the machine asks for is looked up by the file names in
+// CLK's catalogue (os.rom: the Electron MOS 1.00; basic.rom: BASIC II), first in DIR,
+// then in DIR/Electron.  A missing ROM is reported on stderr and left out; the machine's
+// constructor then fails.
 inline ROM::Map fetch_roms(const std::string &dir, const ROM::Request &request, const char *who) {
 	ROM::Map results;
 	for(const auto &description : request.all_descriptions()) {
@@ -53,8 +58,9 @@ inline ROM::Map fetch_roms(const std::string &dir, const ROM::Request &request, 
 	return results;
 }
 
-// A machine with sideways RAM in every free slot and, optionally, a disc or tape
-// inserted; quick-loading on.  Throws std::runtime_error with a message on failure.
+// A machine with sideways RAM in the free slots (CLK's has_sideways_ram) and, if media
+// names a file, the Electron media CLK's analyser finds in it, with the DFS or ADFS the
+// analyser asks for; quick loading on.  Throws std::runtime_error on failure.
 inline std::unique_ptr<Machine> make_machine(const std::string &romdir, const std::string &media, const char *who) {
 	Analyser::Static::Acorn::ElectronTarget target;
 	target.has_sideways_ram = true;
@@ -80,7 +86,7 @@ inline std::unique_ptr<Machine> make_machine(const std::string &romdir, const st
 	return m;
 }
 
-// "\n" in a command-line string -> RETURN, for type_string.
+// A command-line string for type_string: the two characters \n become RETURN.
 inline std::wstring typed(const std::string &t) {
 	std::wstring w;
 	for(size_t k = 0; k < t.size(); k++) {
@@ -90,7 +96,7 @@ inline std::wstring typed(const std::string &t) {
 	return w;
 }
 
-// The Electron's keys by name, for scripts.
+// The Electron's keys by name, for elkh's key command.
 inline const std::map<std::string, uint16_t> &key_names() {
 	static const std::map<std::string, uint16_t> names = {
 		{"SPACE", Electron::KeySpace}, {"RETURN", Electron::KeyReturn}, {"LEFT", Electron::KeyLeft},
@@ -113,7 +119,8 @@ inline const std::map<std::string, uint16_t> &key_names() {
 	return names;
 }
 
-// Run until n more fields have completed.
+// Run until n more fields have completed, in steps of 64 cycles (so up to 63 cycles
+// past the field's end).
 inline void run_fields(Machine &m, int n) {
 	const int target = m.video_.fields_completed + n;
 	while(m.video_.fields_completed < target) m.run_for(Cycles(64));

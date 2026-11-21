@@ -1,15 +1,17 @@
 #!/bin/sh
 # fingerprint.sh OUT WX WY SEED TRAJ MODEL FIELDS
 #
-# A timing fingerprint: builds the demo as soak1.sh does (into build/fp/<basename of
-# OUT>), but moving from the start (MOTION=1) and in the model's schedule (SCHED), so
-# that no key press -- whose timing relative to the program's fields could vary
-# between builds -- steers it; runs it for FIELDS fields and writes every &FExx access of every field --
-# field, line, h (1/16 us), R or W, register, value -- to OUT.  Every mode and palette write the
-# engine makes is at a cycle-exact raster position, so two builds with identical
-# fingerprints over a range of trajectories place every write identically: use it to
-# check that a change is timing-neutral (diff the two files).  SCRMODE=2 in the
-# environment fingerprints the MODE 2 window.
+# A timing fingerprint.  Builds the program as soak1.sh does (into build/fp/<basename
+# of OUT>), but moving from the start (MOTION=1) and booting into the model's
+# schedule (SCHED=8 for MODEL real, 0 for fpga), so that no key press -- whose timing
+# relative to the program's fields could vary between builds -- steers it.  Runs it
+# in elkh for FIELDS fields and writes every &FExx access of every field to OUT, one
+# a line: field, line, h (1/16 us), R or W, register, value.  Every mode and palette
+# write the engine makes is at a cycle-exact raster position, so two builds with
+# identical fingerprints over a range of trajectories place every write identically:
+# use it to check that a change is timing-neutral (diff the two files, or compare
+# them with test/fpcompare.py).  SCRMODE=2 in the environment fingerprints the MODE 2
+# window.  Needs build-emu/elkh and the ROMs (ELK_ROMS, default ./roms).
 set -u
 OUT=$1 WX=$2 WY=$3 SEED=$4 TRAJ=$5 MODEL=$6 FIELDS=$7
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

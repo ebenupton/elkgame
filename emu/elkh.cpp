@@ -1,53 +1,90 @@
-// elkh: a headless Acorn Electron for scripted runs and the scroll demo's checks.
+// elkh: a headless Acorn Electron, driven by a command script, that runs the scroll
+// demo's checks.  The machine is Clock Signal's Electron from the elk-headless fork
+// (machine.hpp); see emu/README.md.
 //
-// Usage: elkh --rompath DIR [--media FILE] COMMAND...
+// Usage: elkh [--rompath DIR] [--media FILE] COMMAND...
+//   --rompath DIR   where the ROMs are (os.rom, basic.rom; also DIR/Electron); default "."
+//   --media FILE    a disc or tape image to insert
 //
-// Commands run in order:
-//   boot SECS              run SECS seconds of emulated time
-//   cycles N               run N CPU (2 MHz) cycles
+// The commands run in order, left to right.  Addresses and byte values are hex without
+// a prefix; counts are decimal; a LEN may also be 0x-prefixed hex.
+//   boot SECS              run SECS seconds of emulated time (fractions allowed)
+//   cycles N               run N CPU cycles (2 MHz)
 //   fields N               run until N more fields have completed
-//   type TEXT              type TEXT through the OS ("\n" = RETURN)
-//   load FILE HEXADDR      copy FILE into main RAM
-//   key NAME down|up       press or release a key (SPACE, RETURN, LEFT, RIGHT, UP, DOWN,
-//                          COLON, SLASH, COMMA, FULLSTOP, SHIFT, ..., letters, digits)
-//   poke HEXADDR HEXVAL    write main RAM
-//   peek HEXADDR LEN       print main RAM
-//   peekrom SLOT HEXADDR LEN   print a ROM or sideways RAM slot
-//   regs                   print the CPU registers and the field count
-//   dump PREFIX            write the last complete field: PREFIX.ppm (1024 x 313, a
-//                          pixel per 1/16 us), PREFIX.addr (313 x 128 uint16 LE: the
-//                          address fetched in each 0.5 us slot, 0xffff none), PREFIX.mode
-//                          (313 x 128 bytes), PREFIX.io (every &FExx access: line, h in
-//                          1/16 us, R/W, register, value)
-//   iolog N FILE           N fields; append each field's &FExx accesses to FILE, one line
-//                          each ("field line h R|W reg value"): a timing fingerprint
-//   realula 0|1            the Ferranti ULA's 40-column address phase and mode 7 wrap
-//                          (1), or the FPGA/JamSoft model's (0, the default)
-//   rowreg old|new         the start-of-row register: CLK's original (every bit) or the
-//                          hardware's A14..A6 (new, the default)
+//   type TEXT              type TEXT through the OS ("\n" is RETURN)
+//   load FILE HEXADDR      copy FILE into main RAM at HEXADDR (up to &7FFF; the rest is
+//                          dropped)
+//   key NAME down|up       press or release a key (any word but "down" releases).  NAME:
+//                          SPACE RETURN LEFT RIGHT UP DOWN COLON SLASH SHIFT CONTROL ESCAPE
+//                          COPY DELETE MINUS SEMICOLON COMMA FULLSTOP BREAK, A-Z, 0-9
+//   poke HEXADDR HEXVAL    write a byte of main RAM
+//   peek HEXADDR LEN       print LEN bytes of main RAM
+//   peekrom SLOT HEXADDR LEN
+//                          print LEN bytes of ROM or sideways RAM slot SLOT (0-15, decimal)
+//                          at HEXADDR (&8000-&BFFF)
+//   regs                   print the CPU's registers, the field count and the paged slot
+//   dump PREFIX            write the last complete field: PREFIX.ppm (1024 x 313, a pixel
+//                          per 1/16 us), PREFIX.addr (313 x 128 uint16 in host order: the
+//                          address fetched in each 0.5 us slot, 0xffff for none),
+//                          PREFIX.mode (313 x 128 bytes: the mode value in force in each
+//                          slot), PREFIX.io (every &FExx access: line, h in 1/16 us, R or
+//                          W, register, value)
+//   iolog N FILE           run N fields, appending every &FExx access of each to FILE, a
+//                          line each ("field line h R|W FExx value", fields counted from
+//                          0): the timing fingerprint (test/fingerprint.sh)
+//   realula 0|1            the ULA model: 1 is the real-ULA switch (real_m5_phase): the
+//                          Ferranti's 40-column address phase, half a microsecond earlier,
+//                          together with the Synertek's mode-7 wrap to &3000; 0 (the
+//                          default; any value but "1") is the FPGA/JamSoft phase, with mode
+//                          value 7 wrapping to &5800.  Neither setting is one real chip: a
+//                          Ferranti wraps mode 7 to &5800 with the early phase, so the
+//                          Ferranti &7FC0 row failure (DESIGN.md, "Two ULAs: the
+//                          schedules") is not reproduced
+//   rowreg old|new         the start-of-row register: "new" (the default) keeps address
+//                          bits 14..6, as the hardware does; anything else, every bit, as
+//                          upstream CLK does
 //
-// The scroll demo's checks (test/soak.sh drives these):
+// The demo's checks (test/soak1.sh drives them):
 //   soak N MODEL OUT WXADDR GCHADDR
-//       N fields, each checked: every window pixel against the pattern model (MODEL:
-//       build/gen/model.bin) at the position the program held for that field (read
-//       from WXADDR, the label wx in the sideways RAM bank), nothing lit outside the
-//       window, the raster lock (the window's exit write at its exact position, the
-//       lock read on line 0), the variable work's end before line 255 (display end,
-//       in MODE 4), and the pad
-//       audit (non-zero bytes fetched in a 40-column mode on a window line: "pad" in
-//       the lead-in, "blip" at the right edge).  Writes OUT.rec (8 bytes a field:
-//       wx, wy, characters drawn by the vertical step, flags, the variable work's end
-//       line) and dumps the first wrong fields as OUT_badK.*; prints a summary line.
-//   audit                  from now on: log stores to main RAM outside the screen, the
-//                          stack, the key bytes and the dummy page; count sideways RAM
-//                          stores by address
-//   auditdump FILE         write the sideways RAM store counts; print the audit summary
-//                          (it also counts non-zero stores to the leak byte, &7E07, on
-//                          lines 29-199: DESIGN.md 4.5)
-//   race N                 N fields: every screen store against the same field's
-//                          display fetches of that byte (a histogram of the gap)
-//   swatch HEXADDR N       N fields: print every store to that sideways RAM address
-//                          (field, line, h, value) -- for following a variable
+//       Run N fields and check each one:
+//       - the picture: every pixel of the window, lines Y0 to Y1 - 1 and characters
+//         WIN_C to WIN_C + WIN_W - 1, exactly as the pattern model says (MODEL:
+//         build/.../gen/model.bin, from tools/gen.py) for the position the program held
+//         for that field (wx and wy, read from WXADDR, the label wx in the program's
+//         sideways RAM bank), except that every slot in which the window fetches the
+//         leak byte, &7E07, must be black; and nothing lit outside the window on lines
+//         0-255, h 0-639;
+//       - the lock: the window's exit (the first write of MODE 4, &20, to &FE07 on or
+//         below line Y0) at line Y1, h 120 exactly, and the lock read on line 0 (the
+//         lock read is a RAM read, so its position is taken from the status-read
+//         marker frame_tail makes just before it: the last &FE00 read before the
+//         field's first palette write);
+//       - the variable work's end (the second &FE00 read after the exit, a marker in
+//         frame.s): before line 255, display end in MODE 4, or the field is "late";
+//       - the pad/blip audit: no non-zero byte fetched in a 40-column mode on a window
+//         line ("pad": h < 320, the lead-in; "blip": h >= 320, the right margin).
+//       Writes OUT.rec, 8 bytes a field (wx and wy, 16 bits each, low byte first; the
+//       byte at GCHADDR, gch: characters the vertical step drew; flags: 1 picture wrong,
+//       2 not locked; the line the variable work ended on, low 8 bits; 0), prints the
+//       first 12 wrong fields and the first 12 with pad or blip bytes, dumps the first 3
+//       wrong fields as OUT_badK.* (K: the field's index), and ends with a summary line.
+//   audit                  from now on, log stores the demo should never make: main RAM
+//                          stores outside the screen ring (&3000-&7FFF), the stack, the
+//                          key bytes (&0A00-&0A02) and the dummy page (&2400-&24FF);
+//                          non-zero stores to the leak byte, &7E07, on lines 29-199 (the
+//                          lines on which the window's &FE07 writes can show it); and
+//                          count sideways RAM stores by address (first 40 of each kind
+//                          printed)
+//   auditdump FILE         write the sideways RAM store counts to FILE (address, count,
+//                          the first writer's PC) and print the audit's summary line
+//   race N                 run N fields, comparing every screen store with the same
+//                          field's display fetches of that byte on lines 30-199; prints
+//                          the near misses and a histogram of fetch - store in 0.5 us
+//                          (it replaces the audit's main RAM hook while it runs)
+//   swatch HEXADDR N       run N fields, printing every store to that sideways RAM
+//                          address (any slot; field, line, h, value): for following a
+//                          variable (it replaces the audit's sideways RAM hook while it
+//                          runs)
 
 #include <algorithm>
 #include <cstdlib>
@@ -93,10 +130,11 @@ void hexdump(const uint8_t *base, unsigned addr, unsigned len) {
 
 unsigned hex(const std::string &s) { return unsigned(std::strtoul(s.c_str(), nullptr, 16)); }
 
-// The scroll demo's pattern, as tools/gen.py's pixel(): a 3-bit RGB colour for map
-// pixel (mx, my), in the window mode's pixels.  The model file holds Y0, H, WIN_C,
-// WIN_W, PERM, PE, PO, then the window's mode (1 or 2) and the MODE 2 palette (16
-// logical colours as the emulator's pixels).
+// The demo's test pattern, as tools/gen.py's pixel() computes it, but as the colour the
+// emulator draws (3-bit RGB: red 4, green 2, blue 1) for map pixel (mx in the window
+// mode's pixels, my in lines).  model.bin, 789 bytes, is written by gen.py: Y0, H,
+// WIN_C, WIN_W (a byte each), PERM, PE, PO (256 bytes each), the window's mode (1 or 2)
+// and the MODE 2 palette (16 logical colours as the emulator's pixels).
 struct Model {
 	int y0 = 0, h = 0, win_c = 0, win_w = 0, mode = 1;
 	uint8_t perm[256], pe[256], po[256], pal[16];
@@ -115,8 +153,8 @@ struct Model {
 	}
 	int ppc() const { return mode == 2 ? 2 : 4; }		// pixels a character (a byte)
 	int colour(int mx, int my) const {
-		static const uint8_t rgb[4] = {0, 3, 5, 6};		// MODE 1: black, cyan, magenta, yellow
-		const int bw = 4 * ppc();				// a block: four characters
+		static const uint8_t rgb[4] = {0, 3, 5, 6};		// MODE 1's logical colours 0-3: black, cyan, magenta, yellow
+		const int bw = 4 * ppc();				// a block: four characters across
 		if((mx % bw) == 0 || (my & 15) == 15) return 0;
 		const int v = (perm[(mx / bw) & 255] + ((my >> 4) & 255)) & 255;
 		const uint8_t b = (my & 1) ? po[v] : pe[v];
@@ -131,18 +169,22 @@ struct Model {
 	}
 };
 
-// The byte a real ULA shows in the video slot of a mid-line &FE07 write (DESIGN.md 4.5):
-// the demo keeps it zero, so the soak expects black where the window fetches it.
+// The leak byte (DESIGN.md, "The leak byte: what a mid-line ULA write shows"): on a real
+// ULA a CPU write to &FE07 during the display takes that video slot, which shows
+// RAM[&7E07] instead of its own byte.  The fork does not model this, so the emulated
+// picture cannot show it; instead the soak expects black wherever the window fetches
+// &7E07, which holds only if the demo keeps the byte zero, and the audit catches any
+// non-zero store to it while the window is up.
 constexpr uint16_t kLeak = 0x7e07;
 
 int soak(elk::Machine &m, int nf, const std::string &model_path, const std::string &outp, unsigned wxa, unsigned gca) {
 	Model model;
 	if(!model.load(model_path)) { std::fprintf(stderr, "soak: cannot read the model %s\n", model_path.c_str()); return 1; }
-	while(m.active_rom_ >= 8) m.run_for(Cycles(64));	// (not while the keyboard is paged in)
+	while((m.active_rom_ & 0x0c) == 0x08) m.run_for(Cycles(64));	// wait while slot 8-11 (the keyboard, BASIC) is paged: the slot then paged is the program's bank
 	const int slot = m.active_rom_;
 	auto r16 = [&](unsigned a) { return int(m.roms_[slot][a & 0x3fff] | (m.roms_[slot][(a + 1) & 0x3fff] << 8)); };
 	FILE *fo = std::fopen((outp + ".rec").c_str(), "wb");
-	int pwx = r16(wxa), pwy = r16(wxa + 2);	// the position shown in the next field
+	int pwx = r16(wxa), pwy = r16(wxa + 2);	// wx, wy as the next field starts: the position it shows
 	long badf = 0, unlocked = 0, late = 0, padf = 0, blipf = 0, shown = 0, pshown = 0;
 	int maxvar = 0, minlock = 9999, maxlock = -1;
 	const int Y0 = model.y0, Y1 = model.y0 + model.h;
@@ -150,15 +192,16 @@ int soak(elk::Machine &m, int nf, const std::string &model_path, const std::stri
 		elk::run_fields(m, 1);
 		const auto &c = *m.video_.completed;
 
-		// The picture: the window against the model, nothing lit outside it.
+		// The picture: the window against the model, nothing lit outside it (lines 0-255,
+		// h 0-639).  x is in 1/16 us; a character is 8 of them.
 		long bad = 0, outside = 0;
 		const int x0 = model.win_c * 8, x1 = x0 + model.win_w * 8;
 		for(int y = 0; y < 256; y++) {
 			const bool in_rows = y >= Y0 && y < Y1;
 			for(int x = 0; x < 640; x++) {
 				if(in_rows && x >= x0 && x < x1) {
-					const int ppc = model.ppc(), sh = ppc == 2 ? 2 : 1;	// capture units a pixel: 2 or 4
-					// The leak byte (&7E07, DESIGN.md 4.5) is kept zero: black wherever it is shown.
+					const int ppc = model.ppc(), sh = ppc == 2 ? 2 : 1;	// a pixel is 2 capture units in MODE 1, 4 in MODE 2
+					// a slot that fetches the leak byte (&7E07) must be black: the demo keeps it zero
 					const int want = c.addr[y][x >> 3] == kLeak ? 0
 						: model.colour((pwx * ppc + ((x - x0) >> sh)) % (2560 * ppc), (pwy + y - Y0) % 2560);
 					if(c.pix[y][x] != want) bad++;
@@ -166,10 +209,15 @@ int soak(elk::Machine &m, int nf, const std::string &model_path, const std::stri
 			}
 		}
 
-		// The lock: the window's exit (MODE 4, &20, the first such write below line Y0:
-		// above it the lines are MODE 4 too) lands at line Y1, h 120 exactly; the
-		// lock read is the last status read before the first palette write of line 0.
-		// The variable work's end: the second status read after the exit (frame.s).
+		// The lock.  The window's exit, the first write of MODE 4 (&20) to &FE07 on or below
+		// line Y0 (the lines above the window are MODE 4 too), must land at line Y1, h 120
+		// exactly.  The lock read itself is a main-RAM read, which the I/O log does not
+		// see; frame_tail makes a status read (lda ULA_STAT) a few cycles before it as a
+		// marker, the last &FE00 read before the field's first palette write (&FE08 on line
+		// 29; the exit's write of &FF at line 200 does not count).  The marker must be on
+		// line 0, and its h is what the summary reports as the lock read's.
+		// The variable work's end: the second &FE00 read after the exit, the marker after
+		// vstep in frame.s (the first marks the start of the bottom of the frame).
 		bool exit_ok = false, lock_ok = false, pal = false;
 		int lockh = -1, varend = -1, nrd = -1, lastv = -1, lasth = -1;
 		for(const auto &a : c.io) {
@@ -186,7 +234,8 @@ int soak(elk::Machine &m, int nf, const std::string &model_path, const std::stri
 		maxvar = std::max(maxvar, varend);
 		if(lock_ok) { minlock = std::min(minlock, lockh); maxlock = std::max(maxlock, lockh); }
 
-		// The pad audit.
+		// The pad audit (the fork's capture): non-zero bytes fetched in a 40-column mode
+		// on a window line, in the lead-in (padl, "pad") or the right margin (padr, "blip").
 		long pad = 0, blip = 0; int padline = -1;
 		for(int y = Y0; y < Y1; y++) {
 			if(c.padl[y] && padline < 0) padline = y;
@@ -220,7 +269,7 @@ int soak(elk::Machine &m, int nf, const std::string &model_path, const std::stri
 	return 0;
 }
 
-// The audit: stores the demo should never make.
+// The audit: stores the demo should never make, and the sideways RAM it writes.
 struct Audit {
 	unsigned last_pc = 0;
 	long strays = 0, leaks = 0;
@@ -231,13 +280,13 @@ struct Audit {
 		elk::Machine *mp = &m;
 		m.opcode_hook = [this](uint16_t pc, uint8_t, uint8_t) { last_pc = pc; };
 		m.ram_write_hook = [this, mp](uint16_t a, uint8_t v) {
-			// the leak byte must be zero whenever a window line's &FE07 write can show it
-			// (the palette line, 29, to the last window line, 199; DESIGN.md 4.5)
+			// the leak byte must stay zero while the window's &FE07 writes can show it: from
+			// the palette line, 29, to the last window line, 199
 			const int line = int(mp->video_.v_count_);
 			if(a == kLeak && v && line >= 29 && line < 200) {
 				if(leaks++ < 40) std::printf("leak byte store %04x=%02x pc=%04x line=%d\n", unsigned(a), unsigned(v), last_pc, line);
 			}
-			// allowed: the screen ring, the stack, the key bytes (&0A00-&0A02), the dummy page (&2400)
+			// allowed: the screen ring, the stack, the key bytes (&0A00-&0A02), the dummy page (&2400-&24FF)
 			if((a >= 0x3000 && a < 0x8000) || (a >= 0x100 && a < 0x200) || (a >= 0xa00 && a <= 0xa02) || (a >= 0x2400 && a <= 0x24ff)) return;
 			if(strays++ < 40) std::printf("stray main RAM store %04x=%02x pc=%04x line=%d\n", unsigned(a), unsigned(v), last_pc, int(mp->video_.v_count_));
 		};
@@ -265,7 +314,7 @@ void race(elk::Machine &m, int nf) {
 	m.ram_write_hook = [&ws, mp](uint16_t a, uint8_t v) {
 		if(a >= 0x3000 && a < 0x8000) ws.push_back({int(mp->video_.v_count_), int(mp->video_.h_count_), a, v, mp->ram_[a]});
 	};
-	std::map<int, long> hist;		// (fetch - store) in half microseconds, clamped to +-40
+	std::map<int, long> hist;		// fetch - store, in 0.5 us slots, clamped to +-40
 	long shown = 0, total = 0, changed = 0;
 	std::unordered_map<uint16_t, std::vector<int>> fetches;
 	for(int k = 0; k < nf; k++) {
@@ -284,7 +333,7 @@ void race(elk::Machine &m, int nf) {
 			if(it == fetches.end()) continue;
 			const int tw = w.v * 128 + (w.h >> 3);
 			for(int tf : it->second) {
-				if(tf / 128 < 30 || tf / 128 >= 200) continue;	// (only the window's lines are lit)
+				if(tf / 128 < 30 || tf / 128 >= 200) continue;	// only the window's lines, 30-199, are lit
 				const int d = std::clamp(tf - tw, -40, 40);
 				hist[d]++;
 				if(d > -12 && d < 12 && shown < 30) {

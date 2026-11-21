@@ -4,10 +4,12 @@
     python3 test/fpmarkers.py FINGERPRINT
 
 After the display-end poll, frame.s reads the status register as a marker at three
-points: just after the poll (m1), before the strip build (m2) and after it (m3).  For
-each kind of field (idle, ahead, behind: told apart by the edge rows' length) prints
-the distribution of m2 - m1 (the edge rows and the step) and m3 - m2 (the build), in
-CPU cycles."""
+points: just after the poll (m1); at wk_pl (m2), after the vertical step's stores
+(nstore) and the column step's edge rows, or the idle field's pad; and before
+setup_frame (m3), after CAL_SPARE.  Over all fields, prints the distribution of
+m2 - m1 (labelled "edge rows": the stores and the edge rows together) and of m3 - m2
+(labelled "spare": CAL_SPARE and the commit bookkeeping around it), in CPU cycles.  The work is fixed-length, so each should be a
+single value."""
 import collections
 import sys
 
@@ -31,7 +33,7 @@ def main(path):
         s = sections(acc)
         if s:
             out['edge rows'][s[0]] += 1
-            out['build'][s[1]] += 1
+            out['spare'][s[1]] += 1
     for name, c in out.items():
         print(f'{name:9s}', ' '.join(f'{d}:{n}' for d, n in sorted(c.items())))
 

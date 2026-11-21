@@ -1,19 +1,27 @@
-// elkview: an Acorn Electron in a window (SDL2), on the same core as elkh.
+// elkview: an Acorn Electron in a window (SDL2), on the same Clock Signal core as elkh
+// (machine.hpp), running in real time.
 //
-// Usage: elkview --rompath DIR [--realula] [--ssd FILE.ssd] [--media FILE] [--type TEXT]
+// Usage: elkview [--rompath DIR] [--realula] [--ssd FILE] [--media FILE] [--type TEXT]
 //                [--record DIR]
-//   --realula  the Ferranti ULA's 40-column address phase and mode 7 wrap (the demo
-//              boots into the real ULA's lead-in schedule: without this, press comma
-//              in the demo for the FPGA ULA's)
-//   --ssd      a quickload: reads the disc's catalogue, finds the file !BOOT *RUNs (or
-//              the first file), and once the OS has booted puts it at its load address
-//              and CALLs its execution address.  (CLK boots a DFS disc only with an
-//              Electron DFS ROM, which is not needed this way.)
-//   --media    a tape (.uef) or disc to insert; with --type '*RUN\n' to load a tape
-//   --type     text to type once the machine has booted ("\n" = RETURN)
-//   --record   write every field as DIR/fNNNNN.ppm
-// Keys: the host keyboard maps onto the Electron's (cursor keys, letters, digits, RETURN,
-// SPACE, SHIFT, CTRL, ESC, ' or : for COLON, F12 = BREAK).  Close the window to quit.
+//   --rompath  where the ROMs are (os.rom, basic.rom; also DIR/Electron); default "."
+//   --realula  the real-ULA switch (real_m5_phase): the Ferranti's 40-column address
+//              phase together with the Synertek's mode-7 wrap to &3000 (so the Ferranti
+//              &7FC0 row failure is not reproduced; emu/README.md).  The demo boots into
+//              the real ULA's lead-in schedule either way: without --realula, press comma
+//              in the demo to select the FPGA ULA's (full stop selects the real one's)
+//   --ssd      a quickload from a DFS disc image: finds the file that !BOOT runs (the
+//              name after "RUN "), or else the first file other than !BOOT; 2.5 s (host
+//              time) after start, copies it to its load address and types CALL &<execution
+//              address>.  It replaces --type.  (CLK boots a DFS disc only with an
+//              Electron DFS ROM, which this way is not needed.)
+//   --media    a tape (.uef) or disc image to insert; e.g. with --type '*RUN\n' for a tape
+//   --type     text to type 2.5 s (host time) after start ("\n" is RETURN)
+//   --record   write each field shown as DIR/fNNNNN.ppm (768 x 288, as in the window);
+//              fields that complete between two redraws are not written
+// The window shows h 0-767 of each 1024 and lines 0-287.  Keys: the host's map onto the
+// Electron's: cursor keys, letters, digits, RETURN, SPACE, SHIFT, CTRL, ESC, BACKSPACE
+// (DELETE), TAB (FUNC), - ; , . /, ' or : for COLON, F12 for BREAK.  Close the window to
+// quit.
 
 #include <chrono>
 
@@ -43,8 +51,9 @@ const std::map<SDL_Keycode, uint16_t> keymap = {
 	{SDLK_8, Electron::Key8}, {SDLK_9, Electron::Key9},
 };
 
-// The DFS file !BOOT *RUNs (or the first file other than !BOOT): its data, load and
-// execution addresses.
+// The file to quickload from a DFS disc image (first catalogue only): the one whose name
+// follows "RUN " in !BOOT, or else the first file other than !BOOT.  Returns its data and
+// its load and execution addresses (16 bits).  Names are matched without a directory.
 bool ssd_boot_file(const std::string &path, std::vector<uint8_t> &data, unsigned &load, unsigned &exec) {
 	FILE *f = std::fopen(path.c_str(), "rb");
 	if(!f) return false;
@@ -126,7 +135,7 @@ int main(int argc, char **argv) {
 	SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
 	SDL_RenderSetLogicalSize(ren, 960, 768);
-	// the active area and a border: h 0..767 (of 1024), lines 0..287
+	// the texture: h 0-767 of each 1024 (a pixel per 1/16 us) and lines 0-287
 	const int TW = 768, TH = 288;
 	SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, TW, TH);
 	std::vector<uint32_t> pix(TW * TH);
@@ -147,7 +156,7 @@ int main(int argc, char **argv) {
 				if(k != keymap.end()) m->set_key_state(k->second, e.type == SDL_KEYDOWN);
 			}
 		}
-		// real time: 2 MHz, catching up at most a second at once
+		// real time: 2 MHz cycles, never more than a second behind (any more is dropped)
 		const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 		const long long target = (long long)(secs * 2000000.0);
 		if(target - cycles > 2000000) cycles = target - 2000000;

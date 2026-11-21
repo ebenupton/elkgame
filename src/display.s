@@ -1,13 +1,15 @@
-; display.s -- the next field's display parameters, from wx and wy (docs/DESIGN.md
-; sections 2 and 4), and the ring-address helpers.  Fixed length.
+; display.s -- the next field's display parameters, from wx and wy (docs/DESIGN.md,
+; "Screen geometry and memory" and "Horizontal fine scroll: the lead-in"), and the
+; ring-address helpers.  Fixed length: run in the fixed work below the window (frame.s).
 ;
 ; Horizontally: t = (WIN_C - wx) & 7 characters of lead-in, and a screen start at the
-; 64-byte-aligned column cb = wx - WIN_C + t, so that the window's first pixel is map
-; column wx.  Vertically: f = ((Y0 - wy) & 7) / 2 rows of 10-line text mode (MODE 6,
-; MODE 3 on lines 0 and 1) at the top push the rows below down by 2f lines.  There are
+; 8-character (64-byte) aligned column cb = wx - WIN_C + t: each window line starts in
+; a 40-column mode and falls t characters behind, so that screen character WIN_C (16)
+; shows map column wx.  Vertically: f = ((Y0 - wy) & 7) / 2 rows of 10-line text mode
+; (MODE 6, MODE 3 on line 0) at the top push the rows below down by 2f lines.  There are
 ; always three rows above the window's first (f band rows and 3 - f MODE 4 rows: 10f +
-; 8 (3 - f) + (wy & 7) = Y0), each 320 bytes (40 columns), so the screen start is the
-; window's first row less 960.
+; 8 (3 - f) + (wy & 7) = Y0 = 30), each 320 bytes (40 columns), so the screen start is
+; the window's first row less 960.
 	.segment "CODE"
 setup_frame:
 	; t = (WIN_C - wx) & 7: the lead-in
@@ -39,8 +41,8 @@ setup_frame:
 	rol	cb8+1
 	asl	cb8
 	rol	cb8+1
-	; f = ((Y0 - wy) & 7) >> 1: the modes of lines 0 and 1, the rest of the band, and
-	; lines 9 and 19 (the band's end, or no change)
+	; f = ((Y0 - wy) & 7) >> 1: the mode of line 0 (the lock's), the band's from line 0,
+	; S + 3 us (ftop), and lines 9 and 19's writes (the band's end, or no change)
 	lda	#Y0
 	sec
 	sbc	wy
@@ -74,15 +76,16 @@ setup_frame:
 	tya
 	sbc	#>960
 	sta	tmp+1
-	; &FE02 = (S >> 1) & &E0, &FE03 = (S >> 9) & &3F
+	; &FE02 = (start >> 1) & &E0, &FE03 = (start >> 9) & &3F
 	lsr	a
 	sta	fe03v
 	lda	tmp
 	ror	a
 	and	#$E0
 	sta	fe02v
-	; the lead-in: the variants of the loop's three parts and the two mode values, by
-	; (wx & 7) | sched (0: the FPGA ULA's schedule, 8: the real ULA's)
+	; the lead-in, by (wx & 7) | sched (0: the FPGA ULA's schedule, 8: the real ULA's):
+	; the palette line's variant and the window's, the blip's mode value and the
+	; lead-in mode value
 	lda	wx
 	and	#7
 	ora	sched
@@ -129,6 +132,8 @@ rowaddr:
 	rts
 
 ; ---- ula_apply: the screen start and line 0's mode, for the next field ---------------
+; Its three writes fall on line 311, below the displayed lines, so they take no video
+; slot and the new screen start applies from the next field's line 0.
 ula_apply:
 	lda	fe02v
 	sta	ULA_SA_L
@@ -139,8 +144,9 @@ ula_apply:
 	rts
 
 ; ---- addrow: A:Y <- &3000 + (576 yt + ra) mod &5000 (Y high), yt 0..319 (yt, yt_hi),
-; ra < &5000.  Both paths take the same time, with no main-RAM (stack) access: a 1 MHz
-; access's length depends on its cycle's phase, which would differ between the paths.
+; ra < &5000.  Both paths take the same time and neither touches main RAM (no stack
+; use): a 1 MHz access's length depends on its cycle's phase, which would differ
+; between the paths.
 addrow:
 	ldy	yt
 	lda	yt_hi

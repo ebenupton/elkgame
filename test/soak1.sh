@@ -2,12 +2,15 @@
 # soak1.sh NAME WX WY SEED TRAJ MODEL FIELDS [SCRMODE]
 #
 # One soak run: builds the demo starting at (WX, WY) with trajectory TRAJ (0 the
-# script, 1 a random walk from SEED) into build/soak/NAME, runs it for FIELDS fields in
-# elkh on ULA model MODEL (real: the Ferranti ULA with the real schedule; fpga: the
-# FPGA model with the FPGA schedule, selected by pressing comma), with SPACE pressed to
-# start the motion, under the store audit; SCRMODE 1 (the default) or 2 is the window's
-# screen mode.  Prints one summary line; the details are in
-# build/soak/NAME/soak.txt.  Exit status 0 if the run is clean.
+# script, 1 a random walk from SEED) and window mode SCRMODE (1, the default, or 2)
+# into build/soak/NAME, and runs it in elkh for FIELDS fields on ULA model MODEL --
+# real: the CLK fork's real-ULA model (realula 1) in the real schedule, the demo's
+# default; fpga: the FPGA model, with comma pressed to select the FPGA schedule --
+# with SPACE pressed to start the motion, under the store audit.  elkh's soak checks
+# each field against BUILD/gen/model.bin at the position read from the label wx (the
+# labels from BUILD/elk.lbl).  Prints one summary line; the details are in
+# build/soak/NAME/soak.txt, the audit's store counts in build/soak/NAME/audit.txt.
+# Exit status 0 if the run is clean (as test/soak.sh defines it).
 #
 # Needs build-emu/elkh (make emu) and the ROMs (ELK_ROMS, default ./roms).
 set -u

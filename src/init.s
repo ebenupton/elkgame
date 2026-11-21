@@ -1,7 +1,10 @@
 ; init.s -- start-up: the machine, the variables, the first picture, and the
-; bootstrap raster sync that finds the field and enters the frame loop.
+; bootstrap raster sync that finds the field's parity and enters the frame loop.
+; Nothing here is cycle-counted except boot_sync's last stretch, from display end to
+; the first lock read.
 
-; ---- build options (make START_WX=... etc.; docs/DESIGN.md section 8) ------------------
+; ---- build options (make START_WX=... etc.; docs/DESIGN.md, "Source map and build
+; options") -------------------------------------------------------------------------------
 	.ifndef	START_WX
 START_WX = 1280+3		; the map position at start: character column ...
 	.endif
@@ -26,8 +29,8 @@ DYMAX = 2			; lines a field, at most (one notch class a field)
 	.assert	(START_WY & 1) = 0, error, "START_WY must be even"
 
 ; ---- start-up ---------------------------------------------------------------------------
-; Entered from the loader with A = this bank.  Interrupts stay off from here on.
-; Variable length (VCODE), like the first picture.
+; Entered from the loader (through entry, &8000) with A = this bank.  Interrupts stay
+; off from here on.  Variable length (VCODE), like the first picture.
 	.segment "VCODE"
 
 init:	sei
@@ -46,7 +49,7 @@ init:	sei
 	sta	ULA_PAL9
 	lda	#M1
 	sta	ULA_MODE
-	; clear &2400-&7FFF (the dummy area and the screen)
+	; clear &2400-&7FFF (the dummy page and the screen ring, the leak byte included)
 	lda	#0
 	tay
 	ldx	#$24
@@ -91,8 +94,8 @@ init:	sei
 	sta	cnext
 	sta	cnext2
 	sta	smode
-	.ifdef	SCR0
-	lda	#5*SCR0
+	.ifdef	SCR0			; (SCR0, if defined: start the script at that segment;
+	lda	#5*SCR0			; not a Makefile option)
 	.endif
 	sta	scrp
 	lda	#0
@@ -103,7 +106,7 @@ init:	sei
 	sta	vdiv
 	sta	svd
 	jsr	first_picture
-	jsr	build
+	jsr	build			; (which also zeroes the leak byte)
 	jsr	setup_frame
 	jsr	ula_apply
 	jmp	boot_sync
@@ -161,12 +164,13 @@ ffc:	jsr	ndraw
 ; The PAL fields alternate 312 and 313 lines.  Wait for the RTC flag (line 99, at its
 ; start or half way along, by field), then count polls to display end (line 255 in a
 ; graphics mode): the count is shorter in the 313-line field (CAL_BTHR divides the
-; two).  From display end, count to line 0 of the next field and enter frame_top.
-; From then on the field parity (fpar) simply alternates.
+; two).  From display end, count to line 0 of the next field (CAL_BN64, CAL_BREM) and
+; enter frame_top; this first lock read lands at about h 312 of line 0.  From then on
+; the field parity (fpar) simply alternates, and frame_tail does the counting.
 	.segment "TAILS"		; (the delay loops of TAILS must not cross a page)
 boot_sync:
 	lda	#PALA			; the six palette registers only MODE 2 reads: set once
-	sta	ULA_PAL8+2		; (here, in TAILS, so as not to move CODE: DESIGN.md 10)
+	sta	ULA_PAL8+2		; (here, in TAILS, so as not to move CODE: DESIGN.md, "The MODE 2 window")
 	lda	#PALB
 	sta	ULA_PAL8+3
 	lda	#PALC
@@ -207,9 +211,9 @@ boot_sync:
 	eor	#1			; 1 if short count: the 313-line field
 	sta	fpar
 	; to the next field's line 0: (312 + F - 255) lines from display end
-	DELAY	208			; past line 256 before a MODE 1 top mode
+	DELAY	208			; past line 256 before the top mode goes in
 	lda	topmode
-	sta	ULA_MODE
+	sta	ULA_MODE		; line 0's mode (MODE 1, or MODE 3 in a band): the read stalls
 	lda	fpar
 	asl	a
 	clc
@@ -219,6 +223,6 @@ bootd:	DELAY	59
 	dex
 	bne	bootd
 	DELAY	CAL_BREM
-	lda	ULA_STAT		; marker: where the lock read is issued
+	lda	ULA_STAT		; marker: the last status read before the lock read
 	jmp	frame_top
 

@@ -1,4 +1,5 @@
-; tables.s -- the tables: tools/gen.py's (segment TABLES), then the hand-written ones.
+; tables.s -- the tables: tools/gen.py's gen_tables.s (segments TABLES and TABLES3),
+; then the hand-written ones (TABLES2).
 ;
 ; A table indexed in the fixed-length work must not straddle a page over the range of
 ; its index, or the access costs a cycle more for some indexes and the "fixed" work is
@@ -16,8 +17,8 @@ BEH:	.repeat	256, k
 	.byte	<((k = $FE) * $FF + (k = 2))
 	.endrep
 
-; Line masks for the edge rows' partial cells (PUTCM), 8 bytes each: lines < 0, 2, 4,
-; 6; lines > 1, 3, 5, 7; every line.  Indexed by mrow + line (0..71).
+; Line masks for the edge rows' partial cells (PUTCM), 8 bytes each: the lines below
+; 0, 2, 4, 6; the lines above 1, 3, 5, 7; every line.  Indexed by mrow + line (0..71).
 MLINE:	.repeat	4, m
 	.repeat	8, i
 	.byte	i < 2*m
@@ -33,8 +34,8 @@ MLINE:	.repeat	4, m
 
 ; ---- the next field's band (setup_frame), by f = ((Y0 - wy) & 7) / 2: the number of
 ; text rows at the top of the frame (raster.s) ----
-TOPMODE: .byte	M1, M3, M3, M3		; lines 0 and 1 (20K modes: the lock reads stall)
-TOP2:	.byte	M4, M6, M6, M6		; from line 1 (40 columns: the CPU uncontended)
+TOPMODE: .byte	M1, M3, M3, M3		; line 0 (a 20K mode: the lock read stalls)
+TOP2:	.byte	M4, M6, M6, M6		; from line 0, S + 3 us (40 columns: the CPU uncontended)
 W9TAB:	.byte	M4, M4, M6, M6		; line 9: the band's end when f = 1
 W19TAB:	.byte	M4, M4, M4, M6		; line 19: the band's end when f = 2
 	NOCROSS	TOPMODE, 4*4

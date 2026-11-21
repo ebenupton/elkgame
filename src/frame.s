@@ -1,18 +1,23 @@
 ; frame.s -- the bottom of the frame: everything between the window's last line and
-; the next field's raster lock (docs/DESIGN.md section 6).
+; the next field's raster lock (docs/DESIGN.md, "The bottom of the frame").
 ;
-; Entered from the window's exit block (VX) at line 200, which leaves MODE 4: a
-; graphics mode, so display end comes at line 255.  In order:
+; Entered from the window's exit block (VX), which leaves MODE 4 from line 200: a
+; graphics mode, so display end comes at line 255, and a 40-column one, so main RAM is
+; uncontended.  In order:
 ;   variable length (must end before line 255):
-;     the keys and the schedule switch, the trajectory (logic.s), the vertical step's
-;     plan (notch.s: vstep); then a poll for display end, which absorbs the variation;
+;     the field parity, the schedule keys, the keyboard (kbd.s), the trajectory
+;     (logic.s), the vertical step's plan (notch.s: vstep); then a poll for display
+;     end, which absorbs the variation;
 ;   fixed length (calibrated in cal.inc, every path padded to the same time):
-;     the vertical step's stores (notch.s: nstore, about 2,120 cycles, a step or not);
-;     the column step's edge rows (colop.s) -- for a commit, for the behind field of a
-;     2-column step, or a pad for an idle field; spare time (CAL_SPARE); the next
-;     field's display parameters (display.s); and a counted delay (frame_tail) to the
-;     lock read in line 0.  (The strip for the next field is built above its window,
-;     raster.s.)
+;     the vertical step's stores (notch.s: nstore, a step or not); the column step's
+;     edge rows (colop.s) -- for a commit, for the behind field of a 2-column step, or
+;     a pad for an idle field; spare time (CAL_SPARE, 676 cycles); the next field's
+;     display parameters (display.s: setup_frame, then ula_apply, whose writes fall on
+;     line 311); and a counted delay (frame_tail) to the lock read in line 0.
+; (The strip for the next field is built above its window: raster.s, strip.s.)
+; The lock read's position still varies by about 21 us from field to field (the fixed
+; work's 1 MHz accesses take 2 or 3 cycles by phase, and the display-end poll has its
+; own granularity); the lock absorbs that.
 ; The "bit ULA_STAT" reads are markers: harmless status reads whose raster positions
 ; the emulator's I/O log records (the soak finds the variable work's end by them).
 	.segment "CODE"
@@ -55,8 +60,8 @@ wk_de:	lda	ULA_STAT
 	and	#$80
 	beq	:+
 	ldx	#$FF
-	DELAY	CAL_CM			; (the two directions' edge rows differ in length: pad each
-	jmp	:++			; so that the lock read lands mid-line whichever it was)
+	DELAY	CAL_CM			; (the two directions' edge rows differ in length: each
+	jmp	:++			; is padded so that both paths take the same time)
 :	nop
 	DELAY	CAL_CP
 :	stx	cdir
@@ -140,8 +145,10 @@ mx_step:
 	rts
 
 ; ---- the delay to the lock -----------------------------------------------------------
-; Count to the next field's line 0: (312 + F) lines from frame_top, F = 1 in the
-; 313-line field, less what the fixed-length work has spent.
+; Counts to the next field's line 0: (312 + F) lines from frame_top, F = fpar = 1 in the
+; 313-line field, less what the fixed-length work has spent.  Each pass of taild is 64
+; cycles (63 the last); fpar adds two, one line.  The lock read then lands at h 152-488
+; of line 0 (soak), inside its fetches.
 	.segment "TAILS"
 frame_tail:
 	bit	ULA_STAT		; marker
@@ -154,7 +161,7 @@ taild:	DELAY	59
 	dex
 	bne	taild
 	DELAY	CAL_REM
-	lda	ULA_STAT		; marker: where the lock read is issued
-	jmp	frame_top
+	lda	ULA_STAT		; marker: the last status read before the lock read, which
+	jmp	frame_top		; the soak takes as the lock read's position
 
 	.assert	>boot_sync = >*, error, "the tails must sit in one page"

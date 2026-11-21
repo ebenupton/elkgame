@@ -1,10 +1,10 @@
-; macros.inc -- cycle-exact delays and the fixed-time cell writers.
+; macros.inc -- cycle-exact delays, the fixed-time cell writers, and page assertions.
 ;
 ; Cycle counts are 2 MHz CPU cycles, for code running from sideways RAM (every fetch
-; at 2 MHz).  Accesses to main RAM or I/O take a 1 MHz slot: 2 or 3 cycles depending
-; on the phase they start in (docs/ULA-NOTES.md section 6), which the calibration
-; (cal.inc) absorbs.  None of these macros touches main RAM except the cell writers'
-; stores.
+; at 2 MHz).  An access to main RAM or I/O takes a 1 MHz slot: 2 or 3 cycles depending
+; on the phase it starts in (docs/ULA-NOTES.md, "CPU clock: 2 MHz / 1 MHz slots,
+; contention, stall release"), which the calibration (cal.inc) absorbs.  None of these
+; macros touches main RAM except the cell writers' stores.
 
 ; PADN n: exactly n cycles (n = 0 or n >= 2) of nop, with one jmp *+3 for an odd n.
 ; Changes no register or flag.
@@ -25,8 +25,8 @@
 	.endmacro
 
 ; DELAY n: exactly n cycles (n = 0 or n >= 2).  Below 14, PADN; otherwise a counted
-; loop (5 cycles a pass, 3 to set up) and PADN for the rest.  The loop must not cross
-; a page (asserted).  Clobbers A and the flags.
+; loop (3 cycles to set up, 5 a pass, 1 fewer for the last) and PADN for the rest.  The
+; loop must not cross a page (asserted).  Clobbers A and the flags.
 	.macro	DELAY	n
 	.local	lp
 	.if	(n) < 14
@@ -47,9 +47,10 @@ lp:	sbc	#1		; 2
 	.endif
 	.endmacro
 
-; LDELAY n: exactly n cycles (21 <= n <= 1296) wherever it sits: the loop lives in its
-; own page (dlp, raster.s), entered by jmp and left by a jmp whose operand the macro
+; LDELAY n: exactly n = 21 + 5k + r cycles wherever it sits: the loop lives in its own
+; page (dlp, raster.s), entered by jmp and left by a jmp whose operand the macro
 ; patches, so it needs no stack and is not upset by page crossings at the call site.
+; The pass count k must be 1..255 (k = 0 would run 256 passes), so n is 26 or 28..1300.
 ; Clobbers A and the flags.
 	.macro	LDELAY	n
 	.local	ret
@@ -68,7 +69,8 @@ lp:	sbc	#1		; 2
 ret:	PADN	lr
 	.endmacro
 
-; SELP en: (plo, phi) <- A:Y (a real cell) if en,x is set, else the dummy; fixed time
+; SELP en: (plo, phi) <- A:Y (a real cell) if en,x is non-zero, else the dummy page;
+; both paths 17 cycles from the branch
 	.macro	SELP	en
 	.local	sdone, sreal
 	sta	plo
@@ -84,7 +86,8 @@ sreal:	PADN	14
 sdone:
 	.endmacro
 
-; PUTCC p: the cell at (plo, phi) <- pve (lines 0, 2, 4, 6), pvo (1, 3, 5), pv7 (7), in line, fixed time
+; PUTCC p: the cell at (plo, phi) <- pve (lines 0, 2, 4, 6), pvo (1, 3, 5), pv7 (7):
+; in line, fixed time; p names its eight self-modified stores
 	.macro	PUTCC	p
 	lda	phi
 	.repeat	8, i
@@ -104,8 +107,8 @@ sdone:
 .ident(.sprintf("%s7", .string(p))):	sta	a:$FF07,x
 	.endmacro
 
-; PUTCM p: as PUTCC, but line i is stored only if MLINE+mrow+i is set (else it goes to
-; the dummy page); fixed time
+; PUTCM p: as PUTCC, but line i goes to the cell only if MLINE+mrow+i is set (else to
+; the dummy page, in the same time)
 	.macro	PUTCM	p
 	lda	#>DUMMY
 	sta	msel

@@ -1,19 +1,21 @@
-; loader.s -- the program file, loaded and run at &2000 (*RUN from disc or tape).
+; loader.s -- the program file (ELKSCR1 or ELKSCR2), loaded and run at &2000 (*RUN
+; from disc or tape).  Not timed; it runs once, before the engine.
 ;
 ; Finds a sideways RAM bank: slots 0-7 and 12-15 in turn, skipping any that holds a ROM
-; image (a copyright string at (&8007)) and any that does not hold a written byte.
-; Copies the 16K image to &8000 in that bank and the keyboard routine to &0900, and
-; enters the image at &8000 with the bank's number in A.  If none is found, it says
-; so and returns to the OS.  The image never returns: BREAK to leave.
+; image (a copyright string at (&8007)) and any where a byte written does not read
+; back.  Copies the 16K image (elk.bin) to &8000 in that bank and the keyboard routine
+; (kbd.bin) to &0900, and enters the image at &8000 with the bank's number in A and
+; interrupts off.  If no bank is found it says so and returns to the OS.  The image
+; never returns: BREAK to leave.
 	.setcpu "6502"
 OSWRCH	= $FFEE
 ROMSEL	= $FE05
-ROMCPY	= $F4
-ZP	= $70
+ROMCPY	= $F4			; the OS's copy of the paged slot
+ZP	= $70			; two copy pointers (&70-&73)
 
 	.segment "LOADER"
-start:	sei
-	lda	ROMCPY
+start:	sei				; no interrupts while slots are paged
+	lda	ROMCPY			; the slot to restore if none is found
 	sta	oldrom
 	ldx	#0
 @next:	lda	BANKS,x
@@ -31,7 +33,7 @@ start:	sei
 	cmp	#'C'
 	bne	@try
 	beq	@skip
-@try:	lda	$BFFF
+@try:	lda	$BFFF			; RAM: the inverse of &BFFF reads back (then restored)
 	eor	#$FF
 	sta	$BFFF
 	cmp	$BFFF
@@ -42,7 +44,7 @@ start:	sei
 	beq	@found
 @skip:	inx
 	bne	@next
-@none:	lda	oldrom
+@none:	lda	oldrom			; none: the old slot back, and the message
 	jsr	page
 	cli
 	ldx	#0
@@ -62,7 +64,7 @@ start:	sei
 	sta	ZP+2
 	lda	#$80
 	sta	ZP+3
-	ldx	#>(IMGLEN+255)
+	ldx	#>(IMGLEN+255)		; whole pages
 	ldy	#0
 @cp:	lda	(ZP),y
 	sta	(ZP+2),y
@@ -77,10 +79,10 @@ start:	sei
 	sta	$0900,y
 	iny
 	bne	@ck
-	lda	cand
+	lda	cand			; enter the image (init, raster.s: entry) with A = the bank
 	jmp	$8000
 
-; page bank A in (by way of 12, in case the current slot is one of 8-11), keeping the
+; page slot A in (by way of 12, in case the current slot is one of 8-11), keeping the
 ; OS's copy of the paged slot (&F4) up to date
 page:	pha
 	lda	#$0C
@@ -90,12 +92,12 @@ page:	pha
 	sta	ROMSEL
 	rts
 
-BANKS:	.byte	0, 1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, $FF
+BANKS:	.byte	0, 1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, $FF	; the candidates; $FF ends
 oldrom:	.byte	0
 cand:	.byte	0
 nomsg:	.byte	13, 10, "No free sideways RAM bank found.", 13, 10, 0
 
-	.align	256
+	.align	256			; the image and the keyboard routine, page-aligned
 IMG:	.incbin	"elk.bin"
 IMGLEN	= * - IMG
 	.align	256

@@ -12,12 +12,12 @@ inks they share are in phase, which cell() arranges: black at the same positions
 every colour that has any (one in four at (0, 0); two on the (0, 0)/(1, 1) diagonal;
 three adds (1, 0)), and magenta likewise where the black leaves room.
 
+gen.py uses it for the MODE 1 window only (the MODE 2 test card is its own).
 Vendored from the author's MODE 1 colour tools (swatch35.py); the colour logic is
 unchanged, so the pattern -- and the binary -- are the same as the soaked build's.
 """
 from itertools import product, combinations
 
-from itertools import product, combinations
 
 K, C, M, Y = 0, 1, 2, 3
 PHYS = {K: (0, 0, 0), C: (0, 255, 255), M: (255, 0, 255), Y: (255, 255, 0)}

@@ -6,22 +6,29 @@
 writes, into OUTDIR:
 
     config.inc      geometry, mode values and palette bytes (assembler constants)
-    gen_tables.s    the pattern, ring-arithmetic and dispatch tables (segment TABLES)
+    gen_tables.s    the pattern, ring-arithmetic and lead-in dispatch tables (segment
+                    TABLES), and small tables and the demo script (segment TABLES3)
     gen_variants.s  the lead-in variants and the window's exit block (segment VARIANTS)
-    gen_loop2.s     the window: two gadgets and sixteen line blocks (segment LOOP2)
-    model.bin       the pattern for the emulator's in-process checker (emu/elkh soak)
+    gen_loop2.s     the window: two gadgets and sixteen line blocks (segment LOOP2),
+                    and the line blocks' address tables for strip.s (segment TABLES3)
+    model.bin       the pattern and geometry for the emulator's checker (emu/elkh soak)
 
-SCRMODE=2 in the environment generates the MODE 2 window (DESIGN.md section 10).
+SCRMODE=2 in the environment (the Makefile sets it) generates the MODE 2 window
+(docs/DESIGN.md, "The MODE 2 window").
 
 Everything here is a pure function of the constants below: the build is deterministic.
-docs/DESIGN.md explains the engine; the references below (section numbers) are to it.
+check_schedules() runs as the variants are generated and fails the build if a lead-in
+schedule fails at any phase in S_RANGE.  docs/DESIGN.md explains the engine; the
+section titles quoted below are its.
 
 The playfield
 -------------
-A map of 2560 x 2560 MODE 1 characters (it repeats in both directions), shown through
-a window of WIN_W characters x H scanlines.  The map is a grid of 16 x 16-pixel blocks
-(4 characters x 2 character rows), each filled with one of the 35 dithered colours of
-swatch35, chosen by a hash of the block's coordinates.  Every block's left pixel column
+A map of 2560 characters x 2560 scanlines (it repeats in both directions), shown
+through a window of WIN_W characters x H scanlines.  The map is a grid of blocks of 4
+characters x 2 character rows (16 x 16 pixels in MODE 1, 8 x 16 in MODE 2), each
+filled with one colour chosen by a hash of the block's coordinates: in MODE 1 one of
+the 35 dithered colours of swatch35, in MODE 2 one of 26 colours of the Amstrad CPC's
+palette, each a dither of two Electron colours.  Every block's left pixel column
 and bottom scanline are black, so a line or character out of place breaks the grid at
 once.  (The bottom, not the top: then line 0 of every character row -- the line whose
 lead-in is the most delicate -- carries pattern, never a black grid line.)
@@ -36,30 +43,39 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import swatch35  # noqa: E402
 
-# ---- geometry (DESIGN.md section 2) ------------------------------------------------
+# ---- geometry ("Screen geometry and memory") ---------------------------------------
 Y0 = 30            # first window scanline (the text-mode band above it is at most 30 lines)
 Y1 = 200           # first scanline below the window (MODE 4 from here to the field's end)
-H = Y1 - Y0        # window height in scanlines
+H = Y1 - Y0        # window height in scanlines: 170
 WIN_C = 16         # screen character (MODE 1, 0..79) of the window's left edge.  The
-                   # longest lead-in (8 us on the real ULA) ends with a write to &FE07
-                   # whose video slot shows RAM[&7E07], not its own byte (DESIGN.md 4.5):
-                   # at character 15 that slot was the window's first character
-WIN_W = 56         # window width in characters.  WIN_C + WIN_W <= 72, so the cells a
-                   # coarse step exposes are the 72-character ring row's gap cells
-assert WIN_C >= 14 and WIN_C + WIN_W <= 72 and WIN_W <= 61
+                   # longest lead-in (8 us, t = 7 on the real ULA's schedule) must end
+                   # before the window, and its last write, the window's mode to &FE07,
+                   # takes the video slot it lands in: on a real ULA that slot shows
+                   # RAM[&7E07], not its own byte ("The leak byte").  At t = 7 the write
+                   # lands at h 120, character 15, so the window starts at 16 and every
+                   # lead-in's last slot is in the left margin (where &7E07, kept zero,
+                   # shows black)
+WIN_W = 56         # window width in characters: the widest at character 16.  A 2-column
+                   # step's first entering column is stored a field early, in the next
+                   # ring row's first gap cell; with no lead-in the margin shows WIN_C
+                   # cells, so WIN_C + WIN_W <= 72 keeps that cell off screen ("Why 56
+                   # characters at 16, and the one-column rule")
+assert WIN_C >= 16 and WIN_C + WIN_W <= 72 and WIN_W <= 61   # (WIN_C >= 16: the t = 7 slot, above)
 MAPW = 2560        # map period, in characters across and in scanlines down
 RING = 0x5000      # the 20K screen ring the ULA wraps (&3000-&7FFF)
 ROWB = 576         # bytes in a ring row: 72 characters
 
 # ---- the ULA's mode register values (&FE07; comms off, LED and motor off) ----------
 M1, M2, M3, M4, M5, M6 = 0x08, 0x10, 0x18, 0x20, 0x28, 0x30
-M7 = 0x38          # mode value 7: fetches like MODE 4 (40 columns), but the real ULA
-                   # wraps it at &8000 to &3000 (MODE 5 wraps to &5800)
+M7 = 0x38          # mode value 7 (undocumented): fetches like MODE 4 (40 columns).  A
+                   # Synertek ULA wraps it at &8000 to &3000; a Ferranti treats it as
+                   # MODE 4 and wraps to &5800, as MODE 4 and 5 do (so on a Ferranti the
+                   # row starting at &7FC0 is wrong at t = 7: docs/DESIGN.md)
 
 # ---- the window's screen mode: 1 (four colours, the default) or 2 (sixteen) ---------
 # MODE 0-2 fetch alike, a byte every half microsecond, so the ring, the lead-in and the
-# strip work on bytes unchanged; only the window's lines are MODE 2 (DESIGN.md
-# section 10).  A character is 4 MODE 1 pixels, or 2 MODE 2 pixels.
+# strip work on bytes unchanged; only the window's lines are MODE 2 ("The MODE 2
+# window").  A character is 8 bytes either way: 4 MODE 1 pixels or 2 MODE 2 pixels.
 SCRMODE = int(os.environ.get('SCRMODE', '1') or '1')
 assert SCRMODE in (1, 2)
 MW = M1 if SCRMODE == 1 else M2          # the window's mode value
@@ -72,7 +88,7 @@ PAL_RGB = {0: (0, 0, 0), 1: (0, 1, 1), 2: (1, 0, 1), 3: (1, 1, 0)}   # logical -
 
 
 def palette_bytes():
-    """&FE08/&FE09 for PAL_RGB in MODE 1 (a set bit turns the component off)."""
+    """(&FE08, &FE09) for PAL_RGB in MODE 1 (a set bit turns the component off)."""
     on8 = on9 = 0
     r, g, b = PAL_RGB[0]
     on9 |= r << 0 | g << 4
@@ -99,7 +115,7 @@ PAL2 = [L if L < 8 else 15 - L for L in range(16)]
 def palette_bytes2():
     """&FE08..&FE0F for PAL2 (a set bit turns the component off).  Register pair
     (&FE08+2i, &FE09+2i) holds logical colours base_i | {0, 2, 8, 10}, base = 0, 4, 5,
-    1 (docs/ULA-NOTES.md section 9)."""
+    1 (docs/ULA-NOTES.md, "Palette")."""
     regs = [0] * 8
     for i, base in enumerate((0, 4, 5, 1)):
         for j, off in enumerate((0, 2, 8, 10)):
@@ -185,8 +201,9 @@ IDX = [PERM2[v] % 35 for v in range(256)] if SCRMODE == 1 else PERM2   # hash va
 
 
 def block_colour(bx, by):
-    """Colour number of block (bx, by).  The map's 160 block rows step the second term
-    mod 256 in the engine as well: rows wrap through MOD160 (gen_tables.s)."""
+    """Colour number of block (bx, by): a hash value through IDX.  The engine steps
+    the block row through MOD160 (gen_tables.s), so by stays in 0..159 and the & 255
+    only matches its 8-bit sum."""
     return IDX[(PERM[bx & 255] + (by & 255)) & 255]
 
 
@@ -225,33 +242,38 @@ SCRIPT = [
 ]
 assert len(SCRIPT) <= 51                            # 5 bytes a segment, one page
 
-# ---- lead-in schedules and the FPGA phase model (DESIGN.md section 4) --------------
+# ---- lead-in schedules and the FPGA phase model ("Horizontal fine scroll: the
+# lead-in") ----------------------------------------------------------------------------
 # Every window line has the same shape.  For t = (WIN_C - wx) & 7:
-#   t = 1..7: MODE 5 (40 columns) from the blanking, MODE 1 at t us: the line's address
-#             counter falls t characters behind and the line fetches 80 - t;
-#   t = 0:    MODE 1 throughout, and MODE 5 for the last 2-3 us of the line, in the
-#             right margin (the "blip"): the line fetches 77-78, not 80, so that the
-#             start-of-row register (A14..A6) still advances by 576, not 640;
+#   t = 1..7: a 40-column mode from the blanking (mode value 7 in the program; the
+#             model below steps it as MODE 5), the window's mode at t us: the line's
+#             address counter falls t characters behind and the line fetches 80 - t;
+#   t = 0:    the window's mode throughout, and MODE 5 for the last 2-3 us of the line,
+#             in the right margin (the "blip"): the line fetches 77-78, not 80, so that
+#             the start-of-row register (A14..A6) still advances by 576, not 640;
 #   always:   MODE 3 for part of the line sync, so that line 7 of a character row is
 #             not a "last line" and line 0 of the next row restarts from the latch.
 # SCHED_START[t] lists (us after S, mode) for the FPGA ULA.  The real ULA's schedule
-# is t + 1 us, with mode 7 in place of MODE 5 (DESIGN.md 4.3); the phase model below
-# is the FPGA's, matched to an nvc simulation of hoglet's ElectronFpga.
+# (measured on a Ferranti) is t + 1 us, 0 when t = 0 ("Two ULAs: the schedules",
+# lead_in_index); the phase model below is the FPGA's, matched to an nvc simulation
+# of hoglet's ElectronFpga, and does not model the leak byte.
 SCHED_START = {t: ([(t, 'M1')] if t else []) for t in range(0, 8)}
 
-# Phase model: with a stalled read ending at h = S (1/16 us ticks), a write '+u' us
-# after S is first used by the video logic at h = 16u + (S - 656); MODE 5 steps the
-# address at h = 15 (mod 16), MODE 1 at h = 7 (mod 8).  CLK corresponds to S = 648,
-# the FPGA's own power-up phase to 656.
+# Phase model ("The phase between CPU and video"): with a stalled read ending at h = S
+# (1/16 us ticks), a write '+u' us after S is first used by the video logic at
+# h = 16u + (S - 656); MODE 5 steps the address at h = 15 (mod 16), MODE 1 at h = 7
+# (mod 8).  CLK corresponds to S = 648, the FPGA's own power-up phase to 656.
 S_RANGE = range(648, 660)      # the phases every schedule must work at
-U_BLIP, U_M3, U_C = -3, 9, 15   # the line's other writes, us after S
+U_BLIP, U_M3, U_C = -3, 9, 15   # the line's other writes, us after S: the blip, MODE 3,
+                                # the lead-in mode (the gadgets' +15)
 HS0, HS1 = 768, 832            # the line sync (FPGA hsync_start, hsync_end)
 
 
 def _sim(s0, ws, S, upto=640, forbid=None, mode='M5', blip=None):
-    """Step a line's fetches from character s0 under writes ws.  Returns (MODE 5 steps,
-    character reached at h = upto), or None if a MODE 5 step leaves a character in
-    forbid (relative to the row)."""
+    """Step a line's fetches from character s0, starting in mode, under writes ws
+    ((us after S, mode)) and, if blip is given, a switch to MODE 5 at h = blip.
+    Returns (MODE 5 steps, character reached at h = upto), or None if a MODE 5 step
+    leaves a character in forbid (relative to the row)."""
     c, m5, k = s0, 0, 0
     marks = sorted((16 * u + S - 656, v) for u, v in ws)
     if blip is not None:
@@ -271,7 +293,13 @@ def _sim(s0, ws, S, upto=640, forbid=None, mode='M5', blip=None):
 
 
 def sched_ok(t, S):
-    """Does lead-in t work at phase S?"""
+    """Does lead-in t work at phase S?  The row register must advance by exactly 576
+    bytes, with no 40-column step from character 7 to 8 (the step that would cross
+    &8000 on the row starting at &7FC0); the line must fetch 80 - t characters and
+    reach the window's last character in the window's mode; the blip must come after
+    the window's last pixel; MODE 3 must fall inside the line sync and graphics be back
+    before it ends; and the window's-mode write must land before the window's first
+    character."""
     ws = SCHED_START[t]
     blip = S + 16 * U_BLIP if t == 0 else None
     init = 'M1' if t == 0 else 'M5'
@@ -306,7 +334,8 @@ def check_schedules(report=False):
     return allok
 
 
-# ---- generated code (DESIGN.md sections 3 and 5) -----------------------------------
+# ---- generated code ("The frame and the scanline loop", "Keeping the picture up to
+# date") ---------------------------------------------------------------------------------
 NROWS = 25          # character rows the strip's tables cover: the window touches 22 or
                     # 23, counted from the even row at or above its first
 
@@ -314,13 +343,15 @@ HEADER = '; generated by tools/gen.py -- do not edit'
 
 
 def gen_variants():
-    """The lead-in variants VS{part}{u}, u = 0..8.  Each is entered at cycle 41 after
-    S with A = M1; VSu is u nops and the store (which lands at S + 23 + u us), padded so
-    that all take the same time, then a jump back into the loop.  VS0 writes nothing.
-    Parts: P, the palette line (backP); 2, the window (through VRET, set by each line's
-    block to the next).  The window's
-    set shares a page with VX, its exit block, so that VJ (the gadgets' jump) changes
-    by its low byte only."""
+    """gen_variants.s: the lead-in variants VS{part}{u}, u = 0..8, and VX.  Each
+    variant is entered with A = MW (the window's mode); VSu is u nops and the store to
+    &FE07 (which lands at S + 23 + u us), padded so that all take the same time, then a
+    jump back into the loop.  VS0 writes nothing (no lead-in), and is padded by CAL_V20
+    in the window, whose stores' 1 MHz alignment differs from the palette line's.
+    Parts: P, the palette line (back to backP); 2, the window (through VRET, which
+    each line block sets to the next).  The window's set shares a page with VX, its
+    exit block (black palette, MODE 4, then the bottom of the frame), so that VJ (the
+    gadgets' jump) changes by its low byte only."""
     check_schedules()
 
     def variant(part, u, back):
@@ -341,12 +372,16 @@ def gen_variants():
     return '\n'.join(L) + '\n'
 
 
-# ---- loop 2: the window's two gadgets and sixteen line blocks (DESIGN.md 3.2) --------
+# ---- loop 2: the window's two gadgets and sixteen line blocks ("The loop") ----------
 def gen_loop2():
-    """gA, gB: the line's horizontal-blanking code, A for even map rows, B for odd.
-    b{P}{k}: the visible part after line k of a P row -- a slice of the next row's
-    preparation, the two store addresses stepped (k < 7), VRET <- the next block, then
-    the tail: the blip (X), the next line's entering byte, the jump to the gadget.
+    """gen_loop2.s.  gA, gB: the line's horizontal-blanking code, A for even map rows,
+    B for odd: the two stores (the entering cell's byte, the leaving cell's zero),
+    MODE 3 in the sync, the lead-in mode, then the variant through VJ.
+    b{P}{k}: the visible part after line k of a P row, BLK_LEN cycles -- a slice of the
+    next row's preparation, the two store addresses stepped (k < 7), VRET <- the next
+    block (and, on line 7, the row count and the exit's arming), then the tail t{P}{k}:
+    the next line's entering byte into A, the blip (stx: X holds its mode value), the
+    jump to the gadget.  Then the tables strip.s uses to address the blocks.
     Cycle counts below are for code and data in sideways RAM (2 MHz)."""
     C = {'inc': 6, 'lda#': 2, 'lda': 4, 'sta': 4, 'clc': 2, 'adc#': 2, 'cmp#': 2, 'tay': 2,
          'ldaY': 4, 'ldy': 4, 'and': 4}
@@ -373,10 +408,13 @@ def gen_loop2():
             cyc += n
         return code, cyc
 
-    # the slices (the address slices read the live gadget before this line's step)
-    # Blocks sit in 64-byte slots, four to a page (A0-A3, A4-A7, B0-B3, B4-B7): only the
-    # blocks at k = 3 and 7 hand over to another page and set VRET's high byte, so the
-    # heavy slices go elsewhere.
+    # The slices: the A row's blocks prepare the next B row and the B row's the next A
+    # row -- the other gadget's two store addresses (each 576 bytes on, less the k
+    # steps already taken, wrapped into the ring), the next colour pair's hash, bytes and
+    # block row, and the leak byte's tail.  The address slices read the live gadget
+    # before this line's step.  Blocks sit in 64-byte slots, four to a page (A0-A3,
+    # A4-A7, B0-B3, B4-B7): only the blocks at k = 3 and 7 hand over to another page
+    # and set VRET's high byte, so the heavy slices go elsewhere.
     SLICE = {
         ('A', 0): copy('VON', 'VO'),                    # this pair's odd-line byte
         ('A', 1): join(copy('VEN', 'VE'), lo_slice('A', 1, 1)),
@@ -393,15 +431,25 @@ def gen_loop2():
         ('B', 3): (['\tldy\tVNX', '\tlda\tPO,y', '\tand\tpmask', '\tsta\tVON'],
                    C['ldy'] + C['ldaY'] + C['and'] + C['sta']),
         ('B', 4): hi_slice('B', 4, 6),
-        # the next A row's line 7 is 0 if its entering cell holds the leak byte (&7E07,
-        # DESIGN.md 4.5): tA6 then loads ZB (= VO - 1, always 0), not VO
+        # The leak byte ("The leak byte").  Every window line's mode writes show
+        # RAM[&7E07] (LEAK), so it must stay 0.  In the window the only store that can
+        # put a non-zero byte there is gadget A's entering store on line 7, which takes
+        # VO (an odd row's line 7 is #0).  gA+1/gA+2 now hold the next A row's entering
+        # cell (the B0/B1 slices set them); if that cell is LEAKCELL (&7E00: low byte
+        # 0, high byte >LEAKCELL), the eor/ora gives 0, cmp #1 clears the carry and
+        # tA6 (the A6 block's tail, which loads line 7's byte) is pointed at ZB
+        # (= VO - 1, always 0); otherwise the carry is set and it loads VO.  build
+        # does the same for the rows it sets up, and zeroes LEAK each field.
         ('B', 5): (['\tlda\tgA+2', '\teor\t#>LEAKCELL', '\tora\tgA+1', '\tcmp\t#1',
                     '\tlda\t#<(VO-1)', '\tadc\t#0', '\tsta\ttA6+1'],
                    C['lda'] + 2 + 4 + C['cmp#'] + C['lda#'] + C['adc#'] + C['sta']),
         ('B', 6): (['\tldy\tbq', '\tlda\tMOD160+1,y', '\tsta\tbq'],
                    C['ldy'] + C['ldaY'] + C['sta']),    # the next pair's block row
     }
-    # the byte each tail loads: the next line's (line k+1, or the next row's line 0)
+    # the byte each tail loads: the next line's (line k+1, or the next row's line 0):
+    # VE on even lines, VO on odd, an odd row's line 7 always 0.  After line 7: into a
+    # B row, the same block row, VE; into an A row, a new block row, VEN (the A1 slice
+    # has yet to copy it to VE)
     def src(P, k):
         if k == 7:
             return 'VE' if P == 'A' else 'VEN'
@@ -428,8 +476,12 @@ def gen_loop2():
             else:
                 L.append(f'\t.assert\t>{nxt} = >*, error, "a block\'s successor must share its page"')
             if k == 7:
-                # arming the exit: on the row count's last row, the chosen block's
-                # 'lda #<next / sta VRET' becomes 'lda #<VX / sta VJ'
+                # arming the exit ("The exit"): when the row count (rows, set by
+                # build) reaches zero, the chosen block's 'lda #<next / sta VRET'
+                # becomes 'lda #<VX / sta VJ', so the last line's gadget jumps to VX.
+                # build patches the two stores' operands (hkA0 here) to point at the
+                # chosen block's hook, and restores the block each field.  Both paths
+                # take the same time.
                 L += ['\tdec\trows', f'\tbne\t:+', '\tlda\t#<VX', f'arm{P}1:\tsta\ta:hkA0+1',
                       '\tlda\t#<VJ', f'arm{P}2:\tsta\ta:hkA0+3', '\tjmp\t:++', ':\tDELAY\t14', ':']
                 cyc += 6 + 17
@@ -437,20 +489,21 @@ def gen_loop2():
             s_ = src(P, k)
             L += [f't{P}{k}:\tlda\t{s_}\t\t; the next line\'s entering byte']
             if s_.startswith('#'):
-                L.append('\tPADN\t2')
+                L.append('\tPADN\t2\t\t; (an immediate load: as long as lda abs)')
             L.append('\tstx\tULA_MODE\t\t; the blip (X: its mode value)')
             L.append(f'\tjmp\tg{P if k < 7 else other[P]}')
             L.append(f'\t.assert\t* - b{P}{k} <= 64, error, "a line block must fit its 64-byte slot"')
     for P in ('A', 'B'):
-        L += [f'g{P}:\tsta\ta:DUMMY\t\t; the entering cell: the 8-byte block, patched per',
-              '\tlda\t#0', '\tsta\ta:DUMMY\t\t; the leaving cell: row, stepped per line',
+        L += [f'g{P}:\tsta\ta:DUMMY\t\t; the entering cell <- A (address set per row, stepped per line)',
+              '\tlda\t#0', '\tsta\ta:DUMMY\t\t; the leaving cell <- 0 (likewise)',
               '\tPADN\tPAD_W1', '\tlda\t#M3', '\tsta\tULA_MODE\t\t; MODE 3 in the sync', '\tPADN\tPAD_W2',
-              f'vc{P}:\tlda\t#M1\t\t; patched: the lead-in mode', '\tsta\tULA_MODE',
+              f'vc{P}:\tlda\t#M1\t\t; patched each field: the lead-in mode (mode 7, or MW)', '\tsta\tULA_MODE',
               '\tlda\t#MW\t\t; the window\'s mode, for the variant',
               '\tPADN\tPAD_W3', '\tjmp\t(VJ)\t\t; the variant, or VX on the last line']
     L.append('\t.assert\t>VRET = >VJ, error, "VRET and VJ must share a page (the exit patch)"')
-    # tables by block index 8 * parity + line (strip.s): each block, its tail, its hook's
-    # two patch points (the immediate, the store's operand), its successor's low byte
+    # tables by block index 8 * parity + line, for build (strip.s): each block, its
+    # tail, its hook's two patch points (the immediate, the store's operand), its
+    # successor's low byte
     L.append('\t.segment "TABLES3"')
     idx = [(P, k) for P in ('A', 'B') for k in range(8)]
     nxt = lambda P, k: f'b{P}{k + 1}' if k < 7 else f'b{other[P]}0'
@@ -473,10 +526,11 @@ def table(name, vals, align=True):
 
 
 def lead_in_index():
-    """t = (WIN_C - wx) & 7 for each wx & 7, and the variant number u for each table
-    index (wx & 7) | 8 (the real ULA's schedule).  FPGA ULA: u = t.  Real ULA: u = t + 1
-    (its switch out of the 40-column mode costs a character fewer), 0 when t = 0
-    (DESIGN.md 4.3)."""
+    """t = (WIN_C - wx) & 7 for each wx & 7, and the variant number u for each dispatch
+    table index (wx & 7) | sched: sched = 0, the FPGA ULA's schedule, u = t; sched = 8,
+    the real ULA's, u = t + 1 (its 40-column address steps half a microsecond earlier,
+    so the switch out of the 40-column mode costs a character fewer), 0 when t = 0
+    ("Two ULAs: the schedules")."""
     tx = [(WIN_C - x) & 7 for x in range(8)]
     ux = [(0 if tx[x] == 0 else tx[x] + 1) if real else tx[x] for real in (0, 1) for x in range(8)]
     return tx, ux
@@ -510,9 +564,10 @@ def gen_tables():
     # rows 256..319: the two 64-entry tails share a page (indexed 0..63, no crossing)
     L += table('R576LT', [v & 255 for v in r576[256:]])
     L += table('R576HT', [v >> 8 for v in r576[256:]], align=False)
-    # the lead-in dispatch, by lead_in_index(), fills the rest of the tails' page: the
-    # variant of each loop part, the blip's mode value (M5 when u <= 1) and the lead-in
-    # write's (M1 when u = 0, else mode 7)
+    # the lead-in dispatch, 16 entries each by (wx & 7) | sched (lead_in_index()),
+    # fills the rest of the tails' page: the variant of each loop part, the blip's mode
+    # value (M5 when u <= 1, else MW: no change) and the lead-in write's (MW when u = 0,
+    # else mode 7)
     tx, ux = lead_in_index()
     L.append('VSP_BY_X:\t.byte ' + ','.join(f'<VSP{u}' for u in ux))
     L.append('VSPH_BY_X:\t.byte ' + ','.join(f'>VSP{u}' for u in ux))
@@ -567,8 +622,8 @@ def main(out):
     # the model for emu/elkh's soak: Y0, H, WIN_C, WIN_W, then PERM, PE, PO
     with open(os.path.join(out, 'model.bin'), 'wb') as f:
         f.write(bytes([Y0, H, WIN_C, WIN_W]) + bytes(PERM) + bytes(pe) + bytes(po))
-        # then the window's mode and, for MODE 2, its palette as the emulator's pixels
-        # (red 4, green 2, blue 1)
+        # then the window's mode and PAL2 as the emulator's pixel values (red 4, green
+        # 2, blue 1), written in both modes; the checker uses it for MODE 2
         f.write(bytes([SCRMODE]) + bytes(((c & 1) << 2) | (c & 2) | (c >> 2) for c in PAL2))
 
 
