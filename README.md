@@ -171,6 +171,19 @@ not yet been run on hardware.
 
 To understand the engine, read `docs/DESIGN.md`.
 
+## Credits
+
+- The stardot thread ["New hardware trick: "vertical rupture" on the Acorn
+  Electron"](https://stardot.org.uk/forums/viewtopic.php?p=498002), whose discussion
+  of mid-line mode changes started this work.
+- pastraiser's [Acorn Electron Hardware](http://www.pastraiser.com/computers/acornelectron/acornelectron.html)
+  page. It is the only description we have found of what the ULA does with mode
+  value 7: it fetches like MODE 4 but wraps at &8000 to &3000, not &5800. That is the
+  behaviour of the Synertek ULA described above.
+- hoglet's [ElectronFpga](https://github.com/hoglet67/ElectronFpga). Its ULA
+  implementation was the reference for the ULA's fetch timing, and the source of the
+  FPGA lead-in schedule the engine supports.
+
 ## Licence
 
 BSD 2-Clause: see [`LICENSE`](LICENSE).  The Clock Signal fork in `emu/clk` keeps its own
